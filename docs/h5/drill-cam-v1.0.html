@@ -1003,6 +1003,7 @@ function createHandViewState() {
     },
     setPrompt(on) {
       promptBoth = !!on;
+      if (promptBoth && presence === "idle") presence = "need_both";
     },
     sync(shape, packets, now) {
       const split = splitHands(packets);
@@ -1092,6 +1093,13 @@ const handViewState = createHandViewState();
 
 function kickHand(vision, delegate) {
   initHand(vision, delegate).then((ok) => {
+    if (awaitBoth && !running) {
+      $("camStatus").textContent = "请双手入镜";
+      $("note").textContent = ok && camReady
+        ? "双手同时入镜后开课。触控演示可不经双手。"
+        : "需开摄像头且双手入镜。触控演示可不经双手。";
+      return;
+    }
     if (running) return;
     $("note").textContent = ok
       ? "姿态与手模已就绪（" + delegate + "）。开摄像头后开始；日课可用触控。"
@@ -1433,6 +1441,15 @@ async function start() {
     $("camStatus").textContent = "待开启";
     return;
   }
+  if (mode === "drill") {
+    awaitBoth = true;
+    handFollow = false;
+    handViewState.setPrompt(true);
+    $("btnStrike").disabled = false;
+    $("camStatus").textContent = "请双手入镜";
+    $("note").textContent = "需开摄像头且双手入镜。触控演示可不经双手。";
+    showBanner("请双手入镜", 1600);
+  }
   try { await initPose(); }
   catch (e) {
     const msg = (e && (e.message || String(e))) || "未知错误";
@@ -1450,16 +1467,11 @@ async function start() {
       ]);
     } catch (err) { console.warn(err); }
   }
-  if (!okCam && mode === "drill") {
-    showBanner("摄像头未开，可用触控演示跑谱", 1800);
-  }
-  if (mode === "drill" && okCam && handLandmarker) {
-    awaitBoth = true;
-    handFollow = false;
-    handViewState.setPrompt(true);
-    if (mode !== "contest") $("btnStrike").disabled = false;
+  if (mode === "drill") {
     $("camStatus").textContent = "请双手入镜";
-    $("note").textContent = "双手同时入镜后开课。触控演示可不经双手。";
+    $("note").textContent = okCam && handLandmarker
+      ? "双手同时入镜后开课。触控演示可不经双手。"
+      : "需开摄像头且双手入镜。触控演示可不经双手。";
     return;
   }
   beginRound();
