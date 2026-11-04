@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- RELEASE_TAG: v1.0 | sample: drill-cam-v1.9 | hold=3s cooldown=2s dual-path TIME=60s -->
 <!-- virtual-wing-chun H5-CAM sample | content=v1.9 | release-tag=v1.0 | 2026-11-04 -->
-<!-- branch: cursor/h5-with-handmodel | hand present layer; pose owns hits -->
+<!-- branch: cursor/h5-dummy-scale-22c8 | portrait dummy scale; pose owns hits -->
 
 <html lang="zh-CN">
 <head>
@@ -24,6 +24,7 @@
   .phone {
     max-width: 420px; margin: 0 auto; min-height: 100dvh; height: 100%;
     position: relative; overflow: hidden;
+    container-type: size; container-name: phone;
     background:
       radial-gradient(ellipse at 50% 35%, #5a4030 0%, transparent 55%),
       linear-gradient(180deg, #2a1c14 0%, #12100e 55%, #0a0908 100%);
@@ -85,28 +86,51 @@
 
   .stage { position: absolute; inset: 0; }
   .dummy {
-    position: absolute; left: 58%; top: 54%; transform: translate(-50%, -50%);
-    width: min(58vw, 220px); height: min(78vw, 300px);
+    position: absolute;
+    left: 16%;
+    width: 80%;
+    height: min(78vw, 320px);
+    height: 76cqmin;
+    top: max(188px, calc(46% - 38cqmin));
+    z-index: auto;
   }
   .pole {
-    position: absolute; left: 50%; top: 8%; bottom: 12%; width: 26px; margin-left: -13px;
-    border-radius: 6px; background: linear-gradient(90deg, #4a3024, #6b4634 40%, #3a241c);
+    position: absolute; left: 50%; top: 0; bottom: 2%; width: 34%;
+    transform: translateX(-50%);
+    border-radius: 28px;
+    z-index: 2;
+    background: linear-gradient(90deg, #2a1812 0%, #6b4634 32%, #b18464 48%, #5a3828 68%, #24160f 100%);
   }
   .arm, .leg {
-    position: absolute; border-radius: 9px;
-    background: linear-gradient(180deg, #6b4634, #3a241c);
+    position: absolute; border-radius: 999px; z-index: 2;
+    background: linear-gradient(180deg, #8d6248, #3a241c 70%);
   }
-  .arm.lu { width: 70px; height: 16px; left: 26%; top: 18%; transform: rotate(12deg); }
-  .arm.ru { width: 70px; height: 16px; left: 56%; top: 16%; transform: rotate(-8deg); }
-  .arm.mid { width: 70px; height: 18px; left: 50%; top: 38%; transform: rotate(-4deg); }
-  .leg { width: 14px; height: 64px; left: 58%; top: 58%; transform: rotate(18deg); }
+  .arm.lu { width: 40%; height: 12%; left: 2%; top: 36%; transform: rotate(14deg); }
+  .arm.ru { width: 46%; height: 13%; left: 50%; top: 8%; transform: rotate(-11deg); }
+  .arm.mid { width: 44%; height: 13%; left: 48%; top: 42%; transform: rotate(-7deg); }
+  .leg { width: 12%; height: 26%; left: 58%; top: 72%; transform: rotate(18deg); transform-origin: top center; }
+  .arm.target-punch, .arm.target-bong { z-index: 9; }
   .arm.target-punch {
-    outline: 3px solid var(--glow); box-shadow: 0 0 12px rgba(232,90,42,0.55);
-    animation: blink 1s ease infinite; z-index: 2;
+    color: var(--glow);
+    outline: 4px solid var(--glow);
+    box-shadow: 0 0 16px rgba(232,90,42,0.8);
+    animation: blink 1s ease infinite;
   }
   .arm.target-bong {
-    outline: 3px solid var(--glow2); box-shadow: 0 0 12px rgba(58,160,200,0.55);
-    animation: blink2 1s ease infinite; z-index: 2;
+    color: var(--glow2);
+    outline: 4px solid var(--glow2);
+    box-shadow: 0 0 16px rgba(58,160,200,0.75);
+    animation: blink2 1s ease infinite;
+  }
+  .arm.target-punch::after, .arm.target-bong::after {
+    content: "";
+    position: absolute; right: 0; top: 50%;
+    height: 180%; aspect-ratio: 1;
+    transform: translate(42%, -50%);
+    border-radius: 50%;
+    border: 3px solid currentColor;
+    box-shadow: 0 0 12px currentColor;
+    pointer-events: none;
   }
   .arm.hit { filter: brightness(1.35); }
   @keyframes blink { 50% { outline-color: rgba(232,90,42,0.2); } }
