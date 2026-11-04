@@ -292,6 +292,7 @@
     text-shadow: 0 1px 3px rgba(0,0,0,0.85);
   }
   .hand-tag.cun { color: #ffd78a; }
+  .hand-tag.need { color: #ffb089; }
   .hand-tag.lost { color: rgba(232,215,195,0.78); }
 </style>
 </head>
@@ -448,7 +449,11 @@ let running = false;
 let left = TIME_LIMIT;
 let endAt = 0;
 let paused = false;
-let pauseStarted = 0;
+let posePaused = false;
+let handGatePaused = false;
+let pauseAnchor = 0;
+let awaitBoth = false;
+let handFollow = false;
 let raf = 0;
 let lastHitAt = 0;
 let lastWrongAt = 0;
@@ -631,26 +636,51 @@ function showBanner(text, ms = 900) {
   showBanner._t = setTimeout(() => b.classList.remove("show"), ms);
 }
 
+function pauseActive() {
+  return posePaused || handGatePaused;
+}
+
+function notePauseEdge(was) {
+  const nowOn = pauseActive();
+  if (nowOn && !was) pauseAnchor = performance.now();
+  if (!nowOn && was && running) endAt += performance.now() - pauseAnchor;
+  paused = nowOn;
+}
+
 function setPaused(on) {
-  if (on === paused) return;
+  if (on === posePaused) return;
+  const was = pauseActive();
+  posePaused = on;
   if (on) {
-    paused = true;
-    pauseStarted = performance.now();
     $("camWrap").classList.add("lost");
     showBanner("回到框内", 1200);
-  } else {
-    if (paused && running) {
-      const dt = performance.now() - pauseStarted;
-      endAt += dt;
-    }
-    paused = false;
+  } else if (!handGatePaused) {
     $("camWrap").classList.remove("lost");
+  }
+  notePauseEdge(was);
+}
+
+function setHandGatePause(on) {
+  if (on === handGatePaused) return;
+  const was = pauseActive();
+  handGatePaused = on;
+  if (!on && !posePaused) $("camWrap").classList.remove("lost");
+  notePauseEdge(was);
+  if (on) {
+    holdShape = null;
+    holdCount = 0;
+    holdAccum = 0;
+    holdLastTs = 0;
+    setHoldUI(false);
   }
 }
 
 function resetIdle() {
   step = 0; left = TIME_LIMIT; running = false; lastHitAt = 0; lastWrongAt = 0;
-  holdShape = null; holdCount = 0; holdAccum = 0; holdLastTs = 0; paused = false;
+  holdShape = null; holdCount = 0; holdAccum = 0; holdLastTs = 0;
+  posePaused = false; handGatePaused = false; paused = false;
+  awaitBoth = false; handFollow = false;
+  if (typeof handViewState !== "undefined" && handViewState.reset) handViewState.reset();
   setHoldUI(false);
   $("count").textContent = "0 / 10 · 识别：—";
   $("timerText").textContent = Math.ceil(left);
@@ -663,6 +693,7 @@ function resetIdle() {
     ? "点开始；对着镜头按当前招出式（日课可用触控演示）"
     : "先开摄像头（需 HTTPS／本机服务），再点开始";
   cancelAnimationFrame(raf);
+  $("camWrap").classList.remove("lost");
   applyStepVisual();
   setModeUI();
 }
@@ -846,134 +877,159 @@ function palmScale(lm) {
   return Math.min(1.35, Math.max(0.75, span / 0.1));
 }
 
-function presentAlphaAt(present, seenHand, lostAt, now) {
-  if (present !== "lost") return seenHand ? 0.92 : 0;
-  if (!lostAt) return 0;
-  const age = now - lostAt;
-  if (age < PRESENT_LOST_HOLD_MS) return 0.4;
-  const t = (age - PRESENT_LOST_HOLD_MS) / PRESENT_LOST_FADE_MS;
-  if (t >= 1) return 0;
-  return 0.4 * (1 - t);
+const skinImg = { Left: new Image(), Right: new Image() };
+skinImg.Left.src = new URL("./hand-skin-L.png", import.meta.url).href;
+skinImg.Right.src = new URL("./hand-skin-R.png", import.meta.url).href;
+
+function splitHands(packets) {
+  let left = null;
+  let right = null;
+  const list = packets || [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (!item || !item.lm || !item.lm[0] || item.lm[0].x == null) continue;
+    if (item.side === "Left" && (!left || item.score >= left.score)) left = item;
+    if (item.side === "Right" && (!right || item.score >= right.score)) right = item;
+  }
+  if (!left && !right) {
+    const bare = [];
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      if (item && item.lm && item.lm[0] && item.side !== "Left" && item.side !== "Right") bare.push(item);
+    }
+    if (bare.length >= 2) {
+      bare.sort((a, b) => a.lm[0].x - b.lm[0].x);
+      right = { lm: bare[0].lm, side: "Right", score: bare[0].score || 0 };
+      left = { lm: bare[bare.length - 1].lm, side: "Left", score: bare[bare.length - 1].score || 0 };
+    }
+  }
+  let presence = "need_both";
+  if (left && right) presence = "both";
+  else if (left) presence = "miss_right";
+  else if (right) presence = "miss_left";
+  return { presence, left, right };
 }
 
-function handLabel(present, seenHand, now, cunUntil) {
+function handLabel(action, presence, seenBoth, promptBoth, now, cunUntil) {
   if (cunUntil && now < cunUntil) return "寸劲到位";
-  if (present === "punch_drive" || present === "bong_bridge") return "手模跟手中";
-  if (present === "lost" && seenHand) return "手模丢失，回到框内";
+  if (presence === "miss_left" || presence === "miss_right") return "请双手入镜";
+  if (presence === "need_both" && (promptBoth || seenBoth)) {
+    if (seenBoth && action === "lost") return "手模丢失，回到框内";
+    return "请双手入镜";
+  }
+  if (action === "punch_drive" || action === "bong_bridge") return "手模跟手中";
+  if (action === "lost" && seenBoth) return "手模丢失，回到框内";
   return "";
 }
 
-function presentColor(pose) {
-  if (pose === "punch_drive") return "232, 90, 42";
-  if (pose === "bong_bridge") return "58, 160, 200";
-  return "232, 215, 195";
+function palmTilt(drawPose, side) {
+  if (drawPose === "punch_drive") return side === "Left" ? 0.22 : -0.22;
+  if (drawPose === "bong_bridge") return side === "Left" ? -0.28 : 0.28;
+  return 0;
 }
 
-function placeHand(hand, w, h, opts) {
-  const mirrorX = !!opts.mirrorX;
-  const xNorm = mirrorX ? 1 - hand.x : hand.x;
-  const pole = w * (opts.poleRatio == null ? 0.5 : opts.poleRatio);
+function placeHand(hand, w, h) {
+  let xNorm = 1 - hand.x;
+  if (hand.side === "Left") xNorm = Math.min(xNorm, 0.36);
+  if (hand.side === "Right") xNorm = Math.max(xNorm, 0.64);
+  const pole = w * 0.58;
   let x = xNorm * w;
-  const gap = w * 0.12;
+  const gap = w * 0.1;
   if (Math.abs(x - pole) < gap) x = x < pole ? pole - gap : pole + gap;
-  const margin = Math.max(12, w * 0.05);
+  const margin = Math.max(8, w * 0.04);
   x = Math.min(w - margin, Math.max(margin, x));
   const yNorm = Math.min(1, Math.max(0, hand.y));
-  const y = opts.yMode === "lower-third"
-    ? h * (0.72 + 0.14 * yNorm)
-    : h * (0.56 + 0.18 * yNorm);
-  const angle = mirrorX ? Math.PI - hand.angle : hand.angle;
-  const base = opts.yMode === "lower-third" ? h * 0.055 : Math.min(h * 0.2, w * 0.075);
-  return { x, y, angle, unit: base * (hand.scale || 1) };
+  const y = h * (0.9 + 0.04 * yNorm);
+  const angle = Math.PI - hand.angle;
+  return { x, y, angle, tilt: palmTilt(hand.drawPose, hand.side), side: hand.side, scale: hand.scale || 1 };
 }
 
-function strokeGhostHand(ctx, x, y, angle, unit, rgb, alpha, hold01, pulse) {
+function drawSkinHand(ctx, img, at, h, alpha, pulse) {
+  if (!img || !img.complete || !img.naturalWidth) return false;
+  const pop = 1 + 0.08 * (pulse > 0 ? pulse : 0);
+  const band = h / 3;
+  const dh = band * 0.78 * pop * Math.min(1.15, Math.max(0.85, at.scale));
+  const dw = dh * (img.naturalWidth / img.naturalHeight);
   ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-  ctx.scale(unit * (1 + 0.16 * pulse), unit * (1 + 0.16 * pulse));
+  ctx.translate(at.x, at.y);
+  ctx.rotate(at.angle + Math.PI / 2 + at.tilt);
   ctx.globalAlpha = alpha;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = "rgb(" + rgb + ")";
-  ctx.fillStyle = "rgb(" + rgb + ")";
-  ctx.lineWidth = 0.14 + hold01 * 0.08;
-  ctx.beginPath();
-  ctx.moveTo(-1.15, 0.22);
-  ctx.lineTo(0, 0);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(0.05, -0.28);
-  ctx.lineTo(0.55, -0.12);
-  ctx.lineTo(0.62, 0.22);
-  ctx.lineTo(0.08, 0.32);
-  ctx.closePath();
-  ctx.globalAlpha = alpha * (0.22 + hold01 * 0.4);
-  ctx.fill();
-  ctx.globalAlpha = alpha;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(0.5, -0.12);
-  ctx.lineTo(1.15, -0.22);
-  ctx.moveTo(0.58, 0.02);
-  ctx.lineTo(1.28, 0.02);
-  ctx.moveTo(0.5, 0.16);
-  ctx.lineTo(1.12, 0.24);
-  ctx.stroke();
   if (pulse > 0.05) {
-    ctx.globalAlpha = alpha * pulse;
-    ctx.strokeStyle = "rgb(255, 214, 140)";
-    ctx.lineWidth = 0.08;
-    ctx.beginPath();
-    ctx.arc(0.32, 0, 0.55 + 0.18 * pulse, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.shadowColor = "rgba(255, 214, 140, 0.85)";
+    ctx.shadowBlur = Math.max(6, dh * 0.08) * pulse;
   }
+  ctx.drawImage(img, -dw * 0.5, -dh * 0.78, dw, dh);
   ctx.restore();
+  return true;
 }
 
 function createHandViewState() {
   let present = "guard";
+  let presence = "idle";
   let drawPose = "guard";
-  let seenHand = false;
+  let seenBoth = false;
+  let promptBoth = false;
   let tracking = false;
   let missingSince = 0;
-  let lostAt = 0;
   let cunUntil = 0;
   let hold01 = 0;
   let frozen = [];
 
-  function remember(shape, handLandmarks) {
-    const nextPose = shapeToPresent(shape);
-    const next = [];
-    const list = handLandmarks || [];
-    for (let i = 0; i < list.length && next.length < 2; i++) {
-      const lm = list[i];
-      if (!lm || !lm[0] || lm[0].x == null || lm[0].y == null) continue;
-      const imageSide = lm[0].x < 0.5 ? "imageLeft" : "imageRight";
-      next.push({
-        x: lm[0].x,
-        y: lm[0].y,
-        scale: palmScale(lm),
-        angle: resolveAngle(nextPose, lm, imageSide),
-      });
-    }
-    return { nextPose, next };
+  function packOne(packet, action) {
+    const lm = packet.lm;
+    const imageSide = lm[0].x < 0.5 ? "imageLeft" : "imageRight";
+    return {
+      x: lm[0].x,
+      y: lm[0].y,
+      scale: palmScale(lm),
+      angle: resolveAngle(action, lm, imageSide),
+      side: packet.side,
+      drawPose: action,
+    };
   }
 
   return {
-    onPoseShape(shape, handLandmarks) {
-      const packed = remember(shape, handLandmarks);
-      if (!packed.next.length) {
-        this.onTrackLost(performance.now());
-        return;
-      }
-      seenHand = true;
-      tracking = true;
+    reset() {
+      present = "guard";
+      presence = "idle";
+      drawPose = "guard";
+      seenBoth = false;
+      promptBoth = false;
+      tracking = false;
       missingSince = 0;
-      lostAt = 0;
-      present = packed.nextPose;
-      drawPose = packed.nextPose;
-      frozen = packed.next;
+      cunUntil = 0;
+      hold01 = 0;
+      frozen = [];
+    },
+    setPrompt(on) {
+      promptBoth = !!on;
+    },
+    sync(shape, packets, now) {
+      const split = splitHands(packets);
+      if (split.presence === "both") {
+        const action = shapeToPresent(shape);
+        seenBoth = true;
+        tracking = true;
+        missingSince = 0;
+        presence = "both";
+        present = action;
+        drawPose = action;
+        frozen = [packOne(split.left, action), packOne(split.right, action)];
+        return { presence: "both", action, holdOff: false };
+      }
+      if (tracking) {
+        tracking = false;
+        missingSince = now;
+      }
+      const inGrace = seenBoth && missingSince && (now - missingSince) < PRESENT_MISS_GRACE_MS;
+      if (inGrace) {
+        return { presence: "both", action: present, holdOff: false };
+      }
+      frozen = [];
+      presence = split.presence;
+      present = seenBoth ? "lost" : "guard";
+      drawPose = "guard";
+      return { presence, action: present, holdOff: !!seenBoth };
     },
     onHitOk() {
       cunUntil = performance.now() + PRESENT_CUN_MS;
@@ -981,35 +1037,20 @@ function createHandViewState() {
     onHoldProgress(p) {
       hold01 = p > 0 ? Math.min(1, p) : 0;
     },
-    onTrackLost(now) {
-      if (!seenHand) return;
-      if (tracking) {
-        tracking = false;
-        missingSince = now;
-      }
-      if (present !== "lost" && missingSince && now - missingSince >= PRESENT_MISS_GRACE_MS) {
-        present = "lost";
-        lostAt = now;
-      }
-    },
-    paint(ctx, w, h, opts) {
+    paint(ctx, w, h) {
+      if (presence !== "both" || frozen.length < 2) return;
       const now = performance.now();
-      const alpha = presentAlphaAt(present, seenHand, lostAt, now);
-      if (alpha <= 0.01 || !frozen.length) return;
       const pulse = cunUntil && now < cunUntil
         ? Math.sin(Math.min(1, (PRESENT_CUN_MS - (cunUntil - now)) / 220) * Math.PI) || 0
         : 0;
-      const pulseClamped = pulse > 0 ? pulse : 0;
       ctx.save();
-      if (opts.yMode === "lower-third") {
-        ctx.beginPath();
-        ctx.rect(0, h * (2 / 3), w, h / 3);
-        ctx.clip();
-      }
-      const rgb = presentColor(drawPose);
+      ctx.beginPath();
+      ctx.rect(0, h * (2 / 3), w, h / 3);
+      ctx.clip();
       for (let i = 0; i < frozen.length; i++) {
-        const at = placeHand(frozen[i], w, h, opts);
-        strokeGhostHand(ctx, at.x, at.y, at.angle, at.unit, rgb, alpha, hold01, pulseClamped);
+        const at = placeHand(frozen[i], w, h);
+        const img = skinImg[at.side];
+        drawSkinHand(ctx, img, at, h, 0.94 + hold01 * 0.06, pulse > 0 ? pulse : 0);
       }
       ctx.restore();
     },
@@ -1018,10 +1059,14 @@ function createHandViewState() {
       const canvas = $("handCanvas");
       const tag = $("handTag");
       const host = $("handOverlay");
-      if (host) host.dataset.present = present;
+      const shown = presence === "both" ? present : (presence === "idle" ? "guard" : presence);
+      if (host) {
+        host.dataset.present = shown;
+        host.dataset.hands = presence;
+      }
       if (tag) {
-        const text = handLabel(present, seenHand, now, cunUntil);
-        const cls = "hand-tag" + (text === "寸劲到位" ? " cun" : text === "手模丢失，回到框内" ? " lost" : "");
+        const text = handLabel(present, presence, seenBoth, promptBoth, now, cunUntil);
+        const cls = "hand-tag" + (text === "寸劲到位" ? " cun" : text === "请双手入镜" ? " need" : text === "手模丢失，回到框内" ? " lost" : "");
         if (tag.textContent !== text) tag.textContent = text;
         if (tag.className !== cls) tag.className = cls;
         tag.hidden = !text;
@@ -1031,14 +1076,14 @@ function createHandViewState() {
       if (rect.width < 2 || rect.height < 2) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const w = Math.max(1, Math.round(rect.width * dpr));
-      const h = Math.max(1, Math.round(rect.height * dpr));
-      if (canvas.width !== w || canvas.height !== h) {
+      const hgt = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== w || canvas.height !== hgt) {
         canvas.width = w;
-        canvas.height = h;
+        canvas.height = hgt;
       }
       const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, w, h);
-      this.paint(ctx, w, h, { mirrorX: true, yMode: "fill", poleRatio: 0.58, clear: false });
+      ctx.clearRect(0, 0, w, hgt);
+      this.paint(ctx, w, hgt);
     },
   };
 }
@@ -1131,7 +1176,8 @@ function flash(ok) {
   }, ok ? 200 : (cur.sil === "bong" ? 140 : 90));
 }
 
-function onHitValid() {
+function onHitValid(fromTouch) {
+  if (handGatePaused && !fromTouch) return;
   const now = performance.now();
   if (now - lastHitAt < POST_HIT_COOLDOWN) return;
   lastHitAt = now;
@@ -1207,6 +1253,16 @@ function applyCandidate(c) {
 
   if (!running || step >= 10) {
     $("camStatus").textContent = label;
+    return;
+  }
+
+  if (handGatePaused) {
+    holdShape = null;
+    holdCount = 0;
+    holdAccum = 0;
+    holdLastTs = 0;
+    setHoldUI(false);
+    $("camStatus").textContent = "请双手入镜";
     return;
   }
 
@@ -1294,7 +1350,17 @@ function predictLoop() {
       if (handLandmarker) {
         try {
           const handResult = handLandmarker.detectForVideo(video, syncTs);
-          handPoints = (handResult && handResult.landmarks) || [];
+          const marks = (handResult && handResult.landmarks) || [];
+          const handed = (handResult && handResult.handedness) || [];
+          handPoints = marks.map((lm, i) => {
+            const cat = handed[i] && handed[i][0];
+            const name = cat && (cat.categoryName || cat.displayName || "");
+            return {
+              lm,
+              side: name === "Left" || name === "Right" ? name : "",
+              score: cat && cat.score ? cat.score : 0,
+            };
+          });
         } catch (err) {
           console.warn("hand frame", err);
           handPoints = [];
@@ -1305,10 +1371,16 @@ function predictLoop() {
         ? classifyPose(lm)
         : { shape: "unknown", quality: "lost", confidence: 0, detail: "无人" };
       if (handPoints) {
-        if (handPoints.length) handViewState.onPoseShape(candidate.shape, handPoints);
-        else handViewState.onTrackLost(syncTs);
+        const view = handViewState.sync(candidate.shape, handPoints, syncTs);
+        if (awaitBoth && !running && view.presence === "both") {
+          awaitBoth = false;
+          handFollow = true;
+          beginRound();
+        }
+        if (handFollow && running) setHandGatePause(!!view.holdOff);
       }
       if (lm || running) applyCandidate(candidate);
+      if (awaitBoth && !running) $("camStatus").textContent = "请双手入镜";
       handViewState.onHoldProgress(running && holdAccum > 0 ? holdAccum / HOLD_PASS_MS : 0);
 
       const canvas = $("overlayCanvas");
@@ -1316,11 +1388,6 @@ function predictLoop() {
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      handViewState.paint(ctx, canvas.width, canvas.height, {
-        mirrorX: false,
-        yMode: "lower-third",
-        poleRatio: 0.5,
-      });
       if (lm) {
         const arm = pickArm(lm);
         if (arm) {
@@ -1347,6 +1414,17 @@ function predictLoop() {
   requestAnimationFrame(predictLoop);
 }
 
+function beginRound() {
+  if (running) return;
+  running = true;
+  if (mode !== "contest") $("btnStrike").disabled = false;
+  endAt = performance.now() + left * 1000;
+  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。";
+  applyStepVisual();
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(tick);
+}
+
 async function start() {
   resetIdle();
   const okCam = await ensureCamera();
@@ -1364,21 +1442,36 @@ async function start() {
     }
     console.error(e);
   }
+  if (handLoading) {
+    try {
+      await Promise.race([
+        handLoading,
+        new Promise((resolve) => setTimeout(resolve, 2500)),
+      ]);
+    } catch (err) { console.warn(err); }
+  }
   if (!okCam && mode === "drill") {
     showBanner("摄像头未开，可用触控演示跑谱", 1800);
   }
-  running = true;
-  if (mode !== "contest") $("btnStrike").disabled = false;
-  endAt = performance.now() + TIME_LIMIT * 1000;
-  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。";
-  applyStepVisual();
-  raf = requestAnimationFrame(tick);
+  if (mode === "drill" && okCam && handLandmarker) {
+    awaitBoth = true;
+    handFollow = false;
+    handViewState.setPrompt(true);
+    if (mode !== "contest") $("btnStrike").disabled = false;
+    $("camStatus").textContent = "请双手入镜";
+    $("note").textContent = "双手同时入镜后开课。触控演示可不经双手。";
+    return;
+  }
+  beginRound();
 }
 
 function finish(pass) {
   running = false;
+  awaitBoth = false;
+  handFollow = false;
   $("btnStrike").disabled = true;
   cancelAnimationFrame(raf);
+  setHandGatePause(false);
   setPaused(false);
   $("hud").classList.remove("urgent");
   $("armRU").classList.remove("target-punch", "target-bong");
@@ -1394,9 +1487,15 @@ function finish(pass) {
 }
 
 function tryTapFallback() {
-  if (!running || step >= 10) return;
-  if (mode === "contest") return;
-  onHitValid();
+  if (mode === "contest" || step >= 10) return;
+  if (!running) {
+    awaitBoth = false;
+    handFollow = false;
+    setHandGatePause(false);
+    handViewState.setPrompt(false);
+    beginRound();
+  }
+  onHitValid(true);
 }
 
 $("btnMode").onclick = () => {
