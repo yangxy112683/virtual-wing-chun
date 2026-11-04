@@ -11,7 +11,7 @@
 1. 模型：MediaPipe Hand Landmarker（或 Pose+Hands 组合），与现有 `tasks-vision` 同栈。
 2. 加载：CDN 优先，本地 `docs/h5/mediapipe/` 后备；失败时日课触控演示仍可用。
 3. 与玩法：摄像头路径须同帧检出左右手，才允许「开始」；触控演示可绕过。Hand 只驱动呈现与寸劲反馈（`HandPresent`／FxLayer）；Pose 独掌 `ArmShape` 与命中；手模不进入判定、不改置信度。
-4. 渲染：最终观感用前臂中段到指尖的皮肤贴图（透明 PNG，长边不超过 512），放在画面下约 1/3，叠层低于木人高亮靶臂。不用线框收尾，不画上身与脸。规格见下文「皮肤贴图」。页面已按此绘制。
+4. 渲染：最终观感用前臂中段到指尖的皮肤贴图（透明 PNG，长边不超过 512）。横屏可见长度约视口宽度的 1/3；竖屏停在中臂与右上靶臂之下。叠层低于木人高亮靶臂。不用线框收尾，不画上身与脸。规格见下文「皮肤贴图」。页面已按此绘制。
 
 就绪先分 `need_both` 与 `both_ready`（或等价名）。`both_ready` 之后，`HandPresent`∈{`guard`,`punch_drive`,`bong_bridge`,`lost`}。`need_both` 不进入冲／膀呈现。动作语义只跟冲／膀，无手指戏。`HandViewState` 挂接 `onPoseShape`、`onHitOk`、`onHoldProgress`、`onTrackLost`。这些钩子只更新手模呈现与寸劲反馈。
 
@@ -34,10 +34,10 @@
 - 加载：摄像头权限成功后的同一条 `initPose` 路径创建 HandLandmarker，且不阻塞开课。模型先取 Google 存储 CDN，再试 `docs/h5/mediapipe/hand_landmarker.task`。失败或仍在下载时，Pose 日课与触控演示继续。
 - 同帧：视频 `currentTime` 变化时取一个时间戳，同时交给 Pose 与 Hand。不把上一帧手点配到本帧姿态。
 - 腕根：landmark 0 驱动虚手根，并避开木人中线。指尖相对腕只在与当前冲／膀同向时，把绘制角向该方向轻推；反向时仍用斜上／斜下规范角。护手不跟手指。
-- 画面：皮肤精灵画在 `#handOverlay` 下三分之一。`armRU`／`arm.mid` 高亮的 `z-index` 压过虚手。摄像头小窗只留 Pose 关节点。
+- 画面：皮肤精灵仍由腕点锚定，画在 `#handOverlay`。横屏可见前臂加手的长度约为视口宽度的 1/3；竖屏只占用中臂与右上靶臂下沿以下的空档，不盖住这两条靶臂。`armRU`／`arm.mid` 高亮的 `z-index` 仍压过虚手。摄像头小窗只留 Pose 关节点。
 - 丢手：单帧漏检先留上一对双手。超过短暂间隔后清掉虚手。缺一手显示「请双手入镜」并软暂停；两手都没了显示「手模丢失，回到框内」。
 - 双手门：摄像头日课点「开始」后，摄像头不可用、权限失败或手模未加载时也不进课，短签和 camStatus 都是「请双手入镜」。同一帧同时有左手和右手才开课。触控演示不经这道门。
-- 皮肤：`docs/h5/hand-skin-L.png`、`docs/h5/hand-skin-R.png`，从参考图裁前臂中段到指尖，最长边 512。护手／冲／膀共用这两张，靠腕角和掌倾区分，画在 `#handOverlay` 下三分之一。
+- 皮肤：`docs/h5/hand-skin-L.png`、`docs/h5/hand-skin-R.png`，从参考图裁前臂中段到指尖，最长边 512。护手／冲／膀共用这两张，靠腕角和掌倾区分。横屏把可见长度放到约视口宽度的 1/3；竖屏停在中臂与右上靶臂之下。
 - 未在此环境验证：Safari 实机。横屏 C4（短边 ≥640）已在桌面视口核对排布，实机仍待看。
 
 页面已按下一节口径接上。`both_ready` 在页面里记为 `both`。缺左、缺右记为 `miss_left`、`miss_right`，短签仍是「请双手入镜」。还没双齐时，两手都不在记为 `need_both`。
@@ -68,7 +68,7 @@
 呈现使用裁切后的人手皮肤精灵，不再用线框收尾。
 
 - 资源：`docs/h5/hand-skin-L.png`、`docs/h5/hand-skin-R.png`。范围是前臂中段到指尖。透明 PNG。单边最长 512。
-- 位置：画面下约 1/3。叠层低于高亮靶臂（`armRU`／`arm.mid`）。
+- 位置：叠层低于高亮靶臂（`armRU`／`arm.mid`）。横屏可见长度约视口宽度的 1/3。竖屏不盖中臂与右上靶臂。
 - 不画上身，不画脸。
 - 手部结果仍不进入 `classifyPose`，不写 `confidence`。
 
