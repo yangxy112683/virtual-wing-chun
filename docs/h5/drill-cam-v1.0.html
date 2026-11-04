@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<!-- virtual-wing-chun H5-CAM sample | content=v1.9 | release-tag=v1.0 | 2026-11-04 -->
+
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>虚拟咏春 · H5-CAM v1.0（内容 v1.9）</title>
+<style>
+  :root {
+    --card: rgba(12, 10, 8, 0.82);
+    --red: #c43c2e; --ok: #e8d7c3; --glow: #e85a2a; --glow2: #3aa0c8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; background: #0d0b09; color: var(--ok);
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent; user-select: none;
+  }
+  .phone {
+    max-width: 420px; margin: 0 auto; min-height: 100dvh; height: 100%;
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(ellipse at 50% 35%, #5a4030 0%, transparent 55%),
+      linear-gradient(180deg, #2a1c14 0%, #12100e 55%, #0a0908 100%);
+  }
+  .cam-wrap {
+    position: absolute; left: 8px; top: 118px; width: 112px; height: 150px;
+    z-index: 6; border-radius: 10px; overflow: hidden;
+    background: #000; border: 2px solid rgba(232,215,195,0.55);
+  }
+  .cam-wrap.lost { border-style: dashed; border-color: rgba(232,215,195,0.35); }
+  .cam-wrap video, .cam-wrap canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; transform: scaleX(-1);
+  }
+  .cam-wrap canvas { pointer-events: none; }
+  .cam-status {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+    font-size: 9px; text-align: center; padding: 3px 2px;
+    background: rgba(0,0,0,0.65); color: rgba(232,215,195,0.85);
+  }
+  .topbar {
+    position: absolute; top: 8px; left: 0; right: 0; text-align: center;
+    font-size: 11px; letter-spacing: 0.18em; color: rgba(232,215,195,0.35); z-index: 8;
+  }
+  .topbar.contest { color: rgba(196,60,46,0.85); }
+  .hud {
+    position: absolute; top: 28px; right: 10px; left: 10px; z-index: 8;
+    background: var(--card); border: 1px solid rgba(196,60,46,0.55);
+    border-radius: 12px; padding: 8px 10px; pointer-events: none;
+    display: grid; grid-template-columns: 56px 1fr; gap: 8px; align-items: center;
+  }
+  .hud.urgent { box-shadow: 0 0 0 1px var(--red); }
+  .timer-wrap { width: 52px; height: 52px; position: relative; }
+  .timer-wrap svg { transform: rotate(-90deg); }
+  .timer-wrap .t {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .hud-main { min-width: 0; }
+  .step-tag { font-size: 14px; font-weight: 700; color: #fff; }
+  .step-tag.punch { color: #ffb089; }
+  .step-tag.bong { color: #8fd3ef; }
+  .instr { font-size: 10px; line-height: 1.35; color: #f0e6da; margin-top: 2px; }
+  .count { font-size: 12px; margin-top: 2px; opacity: 0.85; }
+  .seq {
+    position: absolute; top: 96px; left: 128px; right: 10px; z-index: 8;
+    display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none;
+  }
+  .seq span {
+    width: 20px; height: 20px; border-radius: 5px; font-size: 9px; font-weight: 700;
+    display: grid; place-items: center; background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.12); color: rgba(232,215,195,0.45);
+  }
+  .seq span.punch { border-color: rgba(232,90,42,0.45); }
+  .seq span.bong { border-color: rgba(58,160,200,0.45); }
+  .seq span.done { background: rgba(232,215,195,0.2); color: var(--ok); }
+  .seq span.cur.punch { background: rgba(232,90,42,0.35); color: #fff; border-color: var(--glow); }
+  .seq span.cur.bong { background: rgba(58,160,200,0.35); color: #fff; border-color: var(--glow2); }
+
+  .stage { position: absolute; inset: 0; }
+  .dummy {
+    position: absolute; left: 58%; top: 54%; transform: translate(-50%, -50%);
+    width: min(58vw, 220px); height: min(78vw, 300px);
+  }
+  .pole {
+    position: absolute; left: 50%; top: 8%; bottom: 12%; width: 26px; margin-left: -13px;
+    border-radius: 6px; background: linear-gradient(90deg, #4a3024, #6b4634 40%, #3a241c);
+  }
+  .arm, .leg {
+    position: absolute; border-radius: 9px;
+    background: linear-gradient(180deg, #6b4634, #3a241c);
+  }
+  .arm.lu { width: 70px; height: 16px; left: 26%; top: 18%; transform: rotate(12deg); }
+  .arm.ru { width: 70px; height: 16px; left: 56%; top: 16%; transform: rotate(-8deg); }
+  .arm.mid { width: 70px; height: 18px; left: 50%; top: 38%; transform: rotate(-4deg); }
+  .leg { width: 14px; height: 64px; left: 58%; top: 58%; transform: rotate(18deg); }
+  .arm.target-punch {
+    outline: 3px solid var(--glow); box-shadow: 0 0 12px rgba(232,90,42,0.55);
+    animation: blink 1s ease infinite; z-index: 2;
+  }
+  .arm.target-bong {
+    outline: 3px solid var(--glow2); box-shadow: 0 0 12px rgba(58,160,200,0.55);
+    animation: blink2 1s ease infinite; z-index: 2;
+  }
+  .arm.hit { filter: brightness(1.35); }
+  @keyframes blink { 50% { outline-color: rgba(232,90,42,0.2); } }
+  @keyframes blink2 { 50% { outline-color: rgba(58,160,200,0.2); } }
+
+  .demo-card {
+    position: absolute; bottom: 12%; right: 3%;
+    width: min(28vw, 148px); max-width: 148px;
+    padding: 7px 8px 8px; border-radius: 12px;
+    background: rgba(12,14,18,0.55); border: 1.5px solid rgba(232,90,42,0.75);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.28);
+    pointer-events: none !important; z-index: 3;
+    transition: box-shadow 0.2s, border-color 0.2s, background 0.2s;
+  }
+  .demo-card.ok-flash {
+    border-color: #3ecf7a;
+    background: rgba(20,40,28,0.72);
+    box-shadow: 0 0 0 2px rgba(62,207,122,0.45), 0 6px 16px rgba(0,0,0,0.28);
+  }
+  .demo-label {
+    font-size: 10px; letter-spacing: 0.08em; color: var(--glow);
+    font-weight: 700; margin-bottom: 2px;
+  }
+  .demo-cmd {
+    font-size: 13px; font-weight: 700; color: #f3ebe0; margin-bottom: 2px;
+  }
+  .demo-hint {
+    margin-top: 4px; font-size: 10px; line-height: 1.3;
+    color: rgba(232,215,195,0.78);
+  }
+  .sil {
+    position: relative; width: 100%; height: 86px; margin: 0 auto;
+    opacity: 0.92;
+  }
+  .sil svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .sil .fig { fill: none; stroke: rgba(232,215,195,0.8); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+  .sil .ghost { stroke: rgba(232,215,195,0.22); stroke-width: 2; stroke-dasharray: 3 4; fill: none; }
+  .sil .pose-punch, .sil .pose-bong { display: none; }
+  .sil.punch .pose-punch { display: block; }
+  .sil.bong .pose-bong { display: block; }
+  /* 冲：蓄—斜上伸臂到位—停 0.35s ≈ 1.0s */
+  .sil.punch .pose-punch .arm-line {
+    transform-box: fill-box; transform-origin: 42px 48px;
+    animation: punchLoop 1s ease-in-out infinite;
+  }
+  .sil.punch .pose-punch .fist {
+    transform-box: fill-box; transform-origin: center;
+    animation: punchLoop 1s ease-in-out infinite;
+  }
+  .sil.punch .pose-punch .glow-dot {
+    animation: punchGlow 1s ease-in-out infinite;
+  }
+  @keyframes punchLoop {
+    0%, 8% { transform: translate(-10px, 6px) scale(0.92); }
+    42% { transform: translate(0, 0) scale(1); }
+    77%, 100% { transform: translate(0, 0) scale(1); }
+  }
+  @keyframes punchGlow {
+    0%, 35% { opacity: 0.15; }
+    45%, 80% { opacity: 1; }
+    100% { opacity: 0.35; }
+  }
+  /* 膀：斜下伸臂—停 0.35s ≈ 1.0s */
+  .sil.bong .pose-bong .bridge {
+    transform-box: fill-box; transform-origin: 46px 56px;
+    animation: bongLoop 1s ease-in-out infinite;
+  }
+  .sil.bong .pose-bong .glow-bridge {
+    animation: punchGlow 1s ease-in-out infinite;
+  }
+  @keyframes bongLoop {
+    0%, 10% { transform: rotate(14deg) translateY(4px); }
+    45% { transform: rotate(0) translateY(0); }
+    80%, 100% { transform: rotate(0) translateY(0); }
+  }
+  .sil.strike { filter: drop-shadow(0 0 6px rgba(62,207,122,0.85)); }
+
+  .sfx {
+    position: absolute; left: 58%; top: 42%; transform: translate(-50%,-50%);
+    font-size: 22px; font-weight: 700; opacity: 0; pointer-events: none; z-index: 9;
+    text-shadow: 0 2px 8px #000;
+  }
+  .sfx.show { animation: pop 0.4s ease forwards; }
+  @keyframes pop {
+    0% { opacity: 0; transform: translate(-50%,-40%) scale(0.85); }
+    30% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%,-75%) scale(1.1); }
+  }
+  .flash { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+  .flash.ok { background: rgba(232,215,195,0.07); }
+  .flash.bad { background: rgba(120,120,120,0.12); }
+  .banner {
+    position: absolute; left: 50%; top: 48%; transform: translate(-50%,-50%);
+    z-index: 9; font-size: 13px; padding: 6px 12px; border-radius: 8px;
+    background: rgba(0,0,0,0.7); color: var(--ok); opacity: 0; pointer-events: none;
+  }
+  .banner.show { opacity: 1; }
+
+  .dock {
+    position: absolute; bottom: 14px; left: 10px; right: 10px; z-index: 10;
+    display: grid; grid-template-columns: 1fr 1.1fr 1.4fr; gap: 8px;
+  }
+  .dock button {
+    border: 0; border-radius: 10px; padding: 12px 6px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .ghost { background: rgba(255,255,255,0.08); color: var(--ok); }
+  .primary { background: var(--red); color: #fff; }
+  .strike-btn { background: #2a6f8f; color: #fff; }
+  .strike-btn:disabled, .strike-btn.hidden { opacity: 0.35; }
+  .strike-btn.hidden { visibility: hidden; }
+  .note {
+    position: absolute; bottom: 62px; left: 10px; right: 10px; z-index: 8;
+    font-size: 11px; color: rgba(232,215,195,0.5); text-align: center;
+  }
+  .overlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.62);
+    display: none; align-items: center; justify-content: center; z-index: 20; padding: 24px;
+  }
+  .overlay.show { display: flex; }
+  .card {
+    width: 100%; max-width: 300px; background: #1c1612; border-radius: 16px;
+    padding: 20px; border: 1px solid rgba(196,60,46,0.4); text-align: center;
+  }
+  .card h2 { font-size: 20px; margin-bottom: 8px; }
+  .card p { font-size: 13px; color: rgba(232,215,195,0.75); line-height: 1.5; margin-bottom: 16px; }
+  .card button { width: 100%; border: 0; border-radius: 10px; padding: 12px; background: var(--red); color: #fff; font-weight: 600; margin-top: 8px; }
+  .card .ghost-btn { background: rgba(255,255,255,0.1); }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="topbar" id="topbar"></div>
+  <div class="hud" id="hud">
+    <div class="timer-wrap">
+      <svg width="52" height="52" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="4"/>
+        <circle id="ring" cx="32" cy="32" r="28" fill="none" stroke="#c43c2e" stroke-width="4"
+          stroke-dasharray="175.93" stroke-dashoffset="0" stroke-linecap="round"/>
+      </svg>
+      <div class="t" id="timerText">10.0</div>
+    </div>
+    <div class="hud-main">
+      <div class="step-tag punch" id="stepTag">第 1/10 击 · 日字冲拳（右上）</div>
+      <div class="instr" id="instr">交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；每次有效识别间隔 6 秒。</div>
+      <div class="count" id="count">0 / 10 · 识别：—</div>
+    </div>
+  </div>
+  <div class="seq" id="seq"></div>
+
+  <div class="cam-wrap" id="camWrap">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="overlayCanvas"></canvas>
+    <div class="cam-status" id="camStatus">摄像头未开</div>
+  </div>
+
+  <div class="stage">
+    <div class="dummy">
+      <div class="pole"></div>
+      <div class="arm lu" id="armLU"></div>
+      <div class="arm ru" id="armRU"></div>
+      <div class="arm mid" id="armMid"></div>
+      <div class="leg"></div>
+    </div>
+    <div class="demo-card" id="demoCard" aria-label="成功示范">
+      <div class="demo-label">成功示范</div>
+      <div class="demo-cmd" id="demoCmd">斜上冲出</div>
+      <div class="sil punch" id="sil">
+        <svg viewBox="0 0 112 88" aria-hidden="true">
+          <g class="ghost">
+            <path d="M22 80 V40 Q22 24 38 20 H54"/>
+            <circle cx="38" cy="12" r="7"/>
+          </g>
+          <!-- 冲：斜上出拳 -->
+          <g class="pose-punch">
+            <path class="fig" d="M42 36 L48 54 L52 76"/>
+            <g class="arm-line">
+              <path class="fig" d="M48 54 L90 18"/>
+              <rect class="fist" x="86" y="8" width="16" height="14" rx="3" fill="rgba(232,90,42,0.92)"/>
+              <circle class="glow-dot" cx="102" cy="12" r="4" fill="rgba(255,210,120,0.95)"/>
+            </g>
+          </g>
+          <!-- 膀：斜下出拳 -->
+          <g class="pose-bong">
+            <path class="fig" d="M42 34 L46 48 L48 70"/>
+            <g class="bridge">
+              <path class="fig" d="M46 48 L92 78"/>
+              <rect class="fist-down" x="86" y="72" width="16" height="12" rx="3" fill="rgba(58,160,200,0.95)"/>
+              <path class="glow-bridge" d="M46 48 L92 78" stroke="rgba(120,210,255,0.55)" stroke-width="4" fill="none" stroke-linecap="round"/>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div class="demo-hint" id="demoHint">斜向上出拳即过 · 右上</div>
+    </div>
+    <div class="sfx" id="sfx"></div>
+    <div class="flash" id="flash"></div>
+    <div class="banner" id="banner"></div>
+  </div>
+
+  <p class="note" id="note">先点「开启摄像头」申请权限（须 HTTPS／localhost）；对准上半身按谱出冲或膀</p>
+  <div class="dock">
+    <button class="ghost" id="btnMode" type="button">日课</button>
+    <button class="ghost" id="btnCamDock" type="button">开启摄像头</button>
+    <button class="ghost" id="btnRetryModel" type="button">重试模型</button>
+    <button class="primary" id="btnStart" type="button">开始</button>
+    <button class="strike-btn" id="btnStrike" type="button" disabled>触控演示</button>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="card">
+      <h2 id="resultTitle">过关。下一课。</h2>
+      <p id="resultBody"></p>
+      <button type="button" id="btnAgain">再来一课</button>
+      <button type="button" class="ghost-btn" id="btnCam">开启摄像头</button>
+    </div>
+  </div>
+</div>
+<script type="module">
+let PoseLandmarker = null;
+let FilesetResolver = null;
+
+async function loadVisionLib() {
+  const errors = [];
+  const candidates = [
+    new URL("./mediapipe/tasks-vision.js", import.meta.url).href,
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/+esm",
+    "https://unpkg.com/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs",
+  ];
+  for (const url of candidates) {
+    try {
+      const m = await import(url);
+      PoseLandmarker = m.PoseLandmarker;
+      FilesetResolver = m.FilesetResolver;
+      return url.includes("./mediapipe/") ? "local" : url;
+    } catch (e) {
+      errors.push((url.includes("./mediapipe/") ? "local" : url) + ": " + (e && e.message ? e.message : e));
+    }
+  }
+  throw new Error("姿态库脚本加载失败 → " + errors.join(" | "));
+}
+
+const P = "yat_ji_chung_kuen";
+const B = "bong_sau";
+// 锁定谱：冲-膀-冲-冲-膀-冲-膀-冲-冲-膀
+const SEQ = [P, B, P, P, B, P, B, P, P, B];
+const TIME_LIMIT = 60;
+const POST_HIT_COOLDOWN = 2000; // Owner：冷却 2s // 每次有效识别间隔 2s
+const HOLD_PASS_MS = 3000; // Owner：维持 3s // Owner：对上当前形连续维持 3 秒才计击
+const HOLD_FRAMES = 5; // legacy unused
+const WRONG_COOLDOWN = 800;
+
+const MOVES = {
+  yat_ji_chung_kuen: {
+    name: "日字冲拳", short: "冲", shape: "straight", partLabel: "右上",
+    armId: "armRU", ok: "笃", bad: "嗒", sil: "punch", targetClass: "target-punch",
+    cmd: "斜上冲出", demo: "斜向上出拳即过 · 右上",
+  },
+  bong_sau: {
+    name: "膀手", short: "膀", shape: "bridge", partLabel: "中桩",
+    armId: "armMid", ok: "沙—笃", bad: "嗒", sil: "bong", targetClass: "target-bong",
+    cmd: "斜下成式", demo: "斜向下出拳即过 · 中桩",
+  },
+};
+
+let mode = "drill"; // drill | contest
+let step = 0;
+let running = false;
+let left = TIME_LIMIT;
+let endAt = 0;
+let paused = false;
+let pauseStarted = 0;
+let raf = 0;
+let lastHitAt = 0;
+let lastWrongAt = 0;
+let holdShape = null;
+let holdCount = 0;
+let holdAccum = 0;
+let holdLastTs = 0;
+let camReady = false;
+let poseLandmarker = null;
+let poseLoading = null;
+let lastVideoTime = -1;
+let stream = null;
+let lostStreak = 0;
+const LOST_FRAMES = 14; // ~0.2s+ before soft-pause; cuts false「回到框内」
+
+const $ = (id) => document.getElementById(id);
+const circum = 2 * Math.PI * 28;
+const requiredId = () => SEQ[step];
+const required = () => MOVES[requiredId()];
+
+function angleDeg(a, b, c) {
+  const ba = { x: a.x - b.x, y: a.y - b.y };
+  const bc = { x: c.x - b.x, y: c.y - b.y };
+  const dot = ba.x * bc.x + ba.y * bc.y;
+  const m = Math.hypot(ba.x, ba.y) * Math.hypot(bc.x, bc.y) || 1e-6;
+  return Math.acos(Math.min(1, Math.max(-1, dot / m))) * 180 / Math.PI;
+}
+
+function pickArm(lm) {
+  // Prefer the more extended / higher-visibility arm (selfie: often right = index 12,14,16)
+  const arms = [
+    { sh: lm[12], el: lm[14], wr: lm[16], side: "R" },
+    { sh: lm[11], el: lm[13], wr: lm[15], side: "L" },
+  ];
+  let best = null, bestScore = -1;
+  for (const a of arms) {
+    if (!a.sh || !a.el || !a.wr) continue;
+    const vis = Math.min(a.sh.visibility ?? 1, a.el.visibility ?? 1, a.wr.visibility ?? 1);
+    if (vis < 0.4) continue;
+    const reach = Math.hypot(a.wr.x - a.sh.x, a.wr.y - a.sh.y);
+    const score = vis * 2 + reach;
+    if (score > bestScore) { bestScore = score; best = a; }
+  }
+  return best;
+}
+
+function inFrame(lm, arm) {
+  // Soft margins — only shoulders+elbow must stay in; wrist tip may clip
+  const core = [lm[11], lm[12], arm.sh, arm.el].filter(Boolean);
+  const soft = [arm.wr].filter(Boolean);
+  const coreOk = core.every((p) => p.x > 0.01 && p.x < 0.99 && p.y > 0.01 && p.y < 0.99);
+  const softOk = soft.every((p) => p.x > -0.05 && p.x < 1.05 && p.y > -0.08 && p.y < 1.05);
+  return coreOk && softOk;
+}
+
+/** Owner 放宽：冲＝斜向上出拳；膀＝斜向下出拳（画面 y 向下） */
+function classifyPose(lm) {
+  const arm = pickArm(lm);
+  if (!arm) return { shape: "unknown", quality: "lost", confidence: 0, detail: "无人" };
+
+  if (!inFrame(lm, arm)) {
+    return { shape: "unknown", quality: "lost", confidence: 0, detail: "出画" };
+  }
+
+  const { sh, el, wr } = arm;
+  const reach = Math.hypot(wr.x - sh.x, wr.y - sh.y);
+  const foreshort = Math.abs((wr.z ?? 0) - (sh.z ?? 0));
+  // 腕相对肩的竖直方向：<0 斜上，>0 斜下
+  const dy = wr.y - sh.y;
+  const dx = Math.abs(wr.x - sh.x);
+  // 肘相对肩也可辅助：冲时常腕高于肘；膀时常腕低于肘
+  const wristAboveElbow = wr.y < el.y - 0.01;
+  const wristBelowElbow = wr.y > el.y + 0.01;
+
+  // 未明显出拳（臂收在身侧）
+  const MIN_REACH = 0.10;
+  const MIN_EXT = Math.max(reach, foreshort * 1.2);
+  if (MIN_EXT < MIN_REACH && dx < 0.06) {
+    return { shape: "unknown", quality: "near", confidence: 0.15, detail: "未出招" };
+  }
+
+  // 冲：斜向上出拳（腕高于肩，或腕明显高于肘且前伸）
+  let upScore = -1;
+  if (dy < -0.02 || (wristAboveElbow && dy < 0.04)) {
+    upScore =
+      Math.max(0, -dy) / 0.18 +
+      Math.min(0.5, reach / 0.28) +
+      Math.min(0.35, foreshort * 2.5) +
+      (wristAboveElbow ? 0.25 : 0);
+  }
+
+  // 膀：斜向下出拳（腕低于肩，或腕明显低于肘的前伸／斜落）
+  let downScore = -1;
+  if (dy > 0.02 || (wristBelowElbow && dy > -0.04)) {
+    downScore =
+      Math.max(0, dy) / 0.18 +
+      Math.min(0.5, reach / 0.28) +
+      Math.min(0.35, foreshort * 2.5) +
+      (wristBelowElbow ? 0.25 : 0);
+  }
+
+  if (upScore < 0.2 && downScore < 0.2) {
+    return { shape: "unknown", quality: "near", confidence: 0.2, detail: "方向不明" };
+  }
+
+  // 互斥接近：略偏一侧即可，阈值放宽
+  if (upScore > 0 && downScore > 0 && Math.abs(upScore - downScore) < 0.12) {
+    return { shape: "unknown", quality: "near", confidence: 0.3, detail: "上下接近" };
+  }
+
+  if (upScore >= downScore && upScore >= 0.28) {
+    const conf = Math.min(0.98, 0.52 + upScore * 0.22);
+    return {
+      shape: "straight",
+      quality: conf >= 0.58 ? "ok" : "near",
+      confidence: conf,
+      detail: `冲↑ dy=${dy.toFixed(2)}`,
+    };
+  }
+  if (downScore > upScore && downScore >= 0.28) {
+    const conf = Math.min(0.98, 0.52 + downScore * 0.22);
+    return {
+      shape: "bridge",
+      quality: conf >= 0.58 ? "ok" : "near",
+      confidence: conf,
+      detail: `膀↓ dy=${dy.toFixed(2)}`,
+    };
+  }
+  return { shape: "unknown", quality: "near", confidence: 0.25, detail: "弱特征" };
+}
+
+function buildSeqUI() {
+  const box = $("seq");
+  box.innerHTML = "";
+  SEQ.forEach((id, i) => {
+    const sp = document.createElement("span");
+    const mv = MOVES[id];
+    sp.textContent = mv.short;
+    sp.className = mv.sil + (i < step ? " done" : "") + (i === step ? " cur" : "");
+    box.appendChild(sp);
+  });
+}
+
+function applyStepVisual() {
+  if (step >= SEQ.length) return;
+  const cur = required();
+  $("armRU").className = "arm ru";
+  $("armMid").className = "arm mid";
+  $(cur.armId).classList.add(cur.targetClass);
+  $("sil").className = "sil " + cur.sil;
+  if ($("demoCmd")) $("demoCmd").textContent = cur.cmd || cur.short;
+  if ($("demoHint")) $("demoHint").textContent = cur.demo || (cur.short + " · " + cur.partLabel);
+  $("stepTag").textContent = `第 ${step + 1}/10 击 · ${cur.name}（${cur.partLabel}）`;
+  $("stepTag").className = "step-tag " + cur.sil;
+  $("btnStrike").textContent = "触控演示 · " + cur.name;
+  buildSeqUI();
+}
+
+function setModeUI() {
+  const c = mode === "contest";
+  $("topbar").textContent = c ? "咏春比赛专用" : "";
+  $("topbar").classList.toggle("contest", c);
+  $("btnMode").textContent = c ? "比赛" : "日课";
+  $("btnStrike").classList.toggle("hidden", c);
+  if (c) $("btnStrike").disabled = true;
+  else if (running) $("btnStrike").disabled = false;
+}
+
+function showBanner(text, ms = 900) {
+  const b = $("banner");
+  b.textContent = text;
+  b.classList.add("show");
+  clearTimeout(showBanner._t);
+  showBanner._t = setTimeout(() => b.classList.remove("show"), ms);
+}
+
+function setPaused(on) {
+  if (on === paused) return;
+  if (on) {
+    paused = true;
+    pauseStarted = performance.now();
+    $("camWrap").classList.add("lost");
+    showBanner("回到框内", 1200);
+  } else {
+    if (paused && running) {
+      const dt = performance.now() - pauseStarted;
+      endAt += dt;
+    }
+    paused = false;
+    $("camWrap").classList.remove("lost");
+  }
+}
+
+function resetIdle() {
+  step = 0; left = TIME_LIMIT; running = false; lastHitAt = 0; lastWrongAt = 0;
+  holdShape = null; holdCount = 0; holdAccum = 0; holdLastTs = 0; paused = false;
+  const hb = $("holdBar"); if (hb) { hb.style.width = "0%"; hb.style.display = "none"; }
+  $("count").textContent = "0 / 10 · 识别：—";
+  $("timerText").textContent = Math.ceil(left);
+  $("ring").style.strokeDashoffset = "0";
+  $("hud").classList.remove("urgent");
+  $("overlay").classList.remove("show");
+  $("btnStrike").disabled = mode === "contest";
+  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；每次有效识别间隔 6 秒。";
+  $("note").textContent = camReady
+    ? "点开始；对着镜头按当前招出式（日课可用触控演示）"
+    : "先开摄像头（需 HTTPS／本机服务），再点开始";
+  cancelAnimationFrame(raf);
+  applyStepVisual();
+  setModeUI();
+}
+
+function tick() {
+  if (!running) return;
+  if (!paused) {
+    left = Math.max(0, (endAt - performance.now()) / 1000);
+  }
+  $("timerText").textContent = Math.ceil(left);
+  $("ring").style.strokeDashoffset = String(circum * (1 - left / TIME_LIMIT));
+  $("hud").classList.toggle("urgent", left > 0 && left <= 3);
+  if (left <= 0) return finish(false);
+  raf = requestAnimationFrame(tick);
+}
+
+function secureHint() {
+  if (!window.isSecureContext) {
+    return "当前不是安全上下文（file:// 常被拦）。请用 localhost 或 HTTPS 打开后再点「开启摄像头」。";
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return "本浏览器无 getUserMedia；请换 Chrome／Edge，并用 HTTPS 或 localhost。";
+  }
+  return "";
+}
+
+async function ensureCamera() {
+  if (stream) return true;
+  const hint = secureHint();
+  if (hint) {
+    camReady = false;
+    $("camStatus").textContent = "需 HTTPS／localhost";
+    showBanner("请用本机服务打开", 2200);
+    $("note").textContent = hint;
+    return false;
+  }
+  try {
+    $("camStatus").textContent = "申请权限…";
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+    });
+    const video = $("video");
+    video.srcObject = stream;
+    await video.play();
+    camReady = true;
+    $("camStatus").textContent = "识别中…";
+    $("overlay").classList.remove("show");
+    $("note").textContent = "点开始；对着镜头按当前招出式（日课可用触控演示）";
+    return true;
+  } catch (err) {
+    camReady = false;
+    $("camStatus").textContent = "权限失败／待开启";
+    showBanner("请允许摄像头后点「开启摄像头」", 2200);
+    $("note").textContent = "浏览器未授权摄像头，或须 HTTPS／localhost；日课仍可用触控演示验证谱面。错误：" + (err && err.name ? err.name : "unknown");
+    return false;
+  }
+}
+
+async function initPose() {
+  if (poseLandmarker) return Promise.resolve(poseLandmarker);
+  if (poseLoading) return poseLoading;
+  $("camStatus").textContent = "加载识别模型…";
+  $("note").textContent = "正在加载姿态模型（可先用触控演示开课）…";
+  poseLoading = (async () => {
+    if (!PoseLandmarker) {
+      const src = await loadVisionLib();
+      console.log("vision lib", src);
+    }
+    const wasmCandidates = [
+      new URL("./mediapipe", import.meta.url).href,
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm",
+      "https://unpkg.com/@mediapipe/tasks-vision@0.10.18/wasm",
+    ];
+    const modelCandidates = [
+      new URL("./mediapipe/pose_landmarker_lite.task", import.meta.url).href,
+      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+    ];
+    let lastErr = null;
+    for (const wasm of wasmCandidates) {
+      let vision;
+      try {
+        vision = await FilesetResolver.forVisionTasks(wasm);
+      } catch (e) {
+        lastErr = e;
+        console.warn("wasm fail", wasm, e);
+        continue;
+      }
+      for (const model of modelCandidates) {
+        for (const delegate of ["CPU", "GPU"]) {
+          try {
+            poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: model, delegate },
+              runningMode: "VIDEO",
+              numPoses: 1,
+            });
+            console.log("pose ok", { wasm, model, delegate });
+            $("camStatus").textContent = camReady ? "识别待命" : "模型就绪·请开摄像头";
+            $("note").textContent = "模型已就绪（" + delegate + "）。开摄像头后开始；日课可用触控。";
+            return poseLandmarker;
+          } catch (e) {
+            lastErr = e;
+            console.warn("model fail", model, delegate, e);
+          }
+        }
+      }
+    }
+    const msg = (lastErr && (lastErr.message || String(lastErr))) || "未知错误";
+    $("camStatus").textContent = "模型失败";
+    $("note").textContent = "姿态模型加载失败：" + msg + "。请用本机服务打开并保留 mediapipe 文件夹；日课仍可用触控演示。";
+    poseLoading = null;
+    throw lastErr || new Error(msg);
+  })();
+  return poseLoading;
+}
+
+function flash(ok) {
+  const cur = required();
+  $("flash").className = "flash " + (ok ? "ok" : "bad");
+  if (ok) {
+    $(cur.armId).classList.add("hit");
+    $("demoCard").classList.add("ok-flash");
+    $("sil").classList.add("strike");
+  }
+  const s = $("sfx");
+  s.textContent = ok ? cur.ok : cur.bad;
+  s.classList.remove("show");
+  void s.offsetWidth;
+  s.classList.add("show");
+  setTimeout(() => {
+    $("flash").className = "flash";
+    $("armRU").classList.remove("hit");
+    $("armMid").classList.remove("hit");
+    $("sil").classList.remove("strike");
+    $("demoCard").classList.remove("ok-flash");
+  }, ok ? 200 : (cur.sil === "bong" ? 140 : 90));
+}
+
+function onHitValid() {
+  const now = performance.now();
+  if (now - lastHitAt < POST_HIT_COOLDOWN) return;
+  lastHitAt = now;
+  holdShape = null;
+  holdCount = 0;
+  holdAccum = 0;
+  holdLastTs = 0;
+  flash(true);
+  step += 1;
+  $("count").textContent = step + " / 10 · 识别：ok";
+  if (step >= 10) {
+    finish(true);
+    return;
+  }
+  applyStepVisual();
+  showBanner("下一击 2 秒后可识别", 1800);
+}
+
+function onHitWrong(msg) {
+  const now = performance.now();
+  if (now - lastWrongAt < WRONG_COOLDOWN) return;
+  lastWrongAt = now;
+  flash(false);
+  showBanner(msg || ("须出" + required().name), 800);
+}
+
+function applyCandidate(c) {
+  const now = performance.now();
+  const label = c.shape + (c.detail ? ` ${c.detail}` : "");
+  $("count").textContent = `${step} / 10 · 识别：${c.shape}/${c.quality}`;
+
+  if (c.quality === "lost") {
+    lostStreak += 1;
+    holdShape = null;
+    holdCount = 0;
+    holdAccum = 0;
+    holdLastTs = 0;
+    if (lostStreak >= LOST_FRAMES) {
+      if (running) setPaused(true);
+      $("camStatus").textContent = "回到框内";
+    } else {
+      $("camStatus").textContent = "识别中…";
+    }
+    return;
+  }
+  lostStreak = 0;
+  if (paused) setPaused(false);
+
+  if (!running || step >= 10) {
+    $("camStatus").textContent = label;
+    return;
+  }
+
+  const need = required();
+  const coolLeft = lastHitAt ? POST_HIT_COOLDOWN - (now - lastHitAt) : 0;
+  if (coolLeft > 0) {
+    $("camStatus").textContent = "冷却中 " + Math.ceil(coolLeft / 1000) + "s";
+    holdAccum = 0;
+    holdLastTs = 0;
+    holdShape = null;
+    holdCount = 0;
+    return;
+  }
+
+  if (c.shape === "unknown") {
+    if (holdAccum > 0) showBanner("保持姿势", 800);
+    holdAccum = 0;
+    holdLastTs = 0;
+    holdShape = null;
+    holdCount = 0;
+    $("camStatus").textContent = label;
+    return;
+  }
+
+  if (c.shape !== need.shape) {
+    if (holdAccum > 0) showBanner("保持姿势", 800);
+    holdShape = null;
+    holdCount = 0;
+    holdAccum = 0;
+    holdLastTs = 0;
+    onHitWrong("须出" + need.name);
+    $("camStatus").textContent = label;
+    return;
+  }
+
+  // 路径 B：ok 或 near 均可蓄 5s 维持
+  if (c.quality === "ok" || c.quality === "near") {
+    if (holdShape === c.shape && holdLastTs) holdAccum += now - holdLastTs;
+    else { holdShape = c.shape; holdAccum = 0; }
+    holdLastTs = now;
+    const sec = Math.min(3, holdAccum / 1000);
+    const pct = Math.floor((holdAccum / HOLD_PASS_MS) * 100);
+    const tag = need.sil === "punch" ? "冲态维持中" : "膀态维持中";
+    $("camStatus").textContent = tag + " " + sec.toFixed(1) + "/3s · " + pct + "%";
+    $("count").textContent = `${step} / 10 · ${tag} ${pct}%`;
+    const bar = $("holdBar");
+    if (bar) {
+      bar.style.display = "block";
+      bar.style.width = Math.min(100, pct) + "%";
+      bar.className = "hold-bar " + need.sil;
+    }
+    if (holdAccum >= HOLD_PASS_MS) {
+      if (bar) bar.style.display = "none";
+      onHitValid();
+      return;
+    }
+  } else {
+    holdAccum = 0;
+    holdLastTs = 0;
+  }
+
+  // 路径 A：瞬时 ok + 短去抖（原判定）
+  if (c.quality === "ok") {
+    if (holdShape === c.shape) holdCount += 1;
+    else { holdCount = 1; }
+    if (holdCount >= HOLD_FRAMES) {
+      const bar = $("holdBar");
+      if (bar) bar.style.display = "none";
+      onHitValid();
+      return;
+    }
+  }
+
+  if (c.quality === "near" && holdAccum <= 0) {
+    showBanner("再送一寸", 500);
+  }
+}
+
+
+function predictLoop() {
+  const video = $("video");
+  if (!poseLandmarker || !camReady || video.readyState < 2) {
+    requestAnimationFrame(predictLoop);
+    return;
+  }
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const result = poseLandmarker.detectForVideo(video, performance.now());
+    const canvas = $("overlayCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (result.landmarks && result.landmarks[0]) {
+      const lm = result.landmarks[0];
+      // light joint dots only (no full skeleton) — 体验禁止全屏骨架
+      const arm = pickArm(lm);
+      if (arm) {
+        ctx.fillStyle = "rgba(232,215,195,0.85)";
+        for (const p of [arm.sh, arm.el, arm.wr]) {
+          ctx.beginPath();
+          ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = "rgba(232,90,42,0.7)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(arm.sh.x * canvas.width, arm.sh.y * canvas.height);
+        ctx.lineTo(arm.el.x * canvas.width, arm.el.y * canvas.height);
+        ctx.lineTo(arm.wr.x * canvas.width, arm.wr.y * canvas.height);
+        ctx.stroke();
+      }
+      applyCandidate(classifyPose(lm));
+    } else if (running) {
+      applyCandidate({ shape: "unknown", quality: "lost", confidence: 0, detail: "无人" });
+    }
+  }
+  requestAnimationFrame(predictLoop);
+}
+
+async function start() {
+  resetIdle();
+  const okCam = await ensureCamera();
+  if (!okCam && mode === "contest") {
+    showBanner("比赛专用需摄像头，请先点「开启摄像头」", 2000);
+    $("camStatus").textContent = "待开启";
+    return;
+  }
+  if (!poseLandmarker) {
+    try { await initPose(); }
+    catch (e) {
+      const msg = (e && (e.message || String(e))) || "未知错误";
+      $("camStatus").textContent = "模型失败";
+      $("note").textContent = "姿态模型加载失败：" + msg + "。日课可用触控演示；可点「重试模型」。";
+      console.error(e);
+    }
+  }
+  if (!okCam && mode === "drill") {
+    showBanner("摄像头未开，可用触控演示跑谱", 1800);
+  }
+  running = true;
+  if (mode !== "contest") $("btnStrike").disabled = false;
+  endAt = performance.now() + TIME_LIMIT * 1000;
+  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；每次有效识别间隔 6 秒。";
+  applyStepVisual();
+  raf = requestAnimationFrame(tick);
+}
+
+function finish(pass) {
+  running = false;
+  $("btnStrike").disabled = true;
+  cancelAnimationFrame(raf);
+  setPaused(false);
+  $("hud").classList.remove("urgent");
+  $("armRU").classList.remove("target-punch", "target-bong");
+  $("armMid").classList.remove("target-punch", "target-bong");
+  const contest = mode === "contest";
+  $("resultTitle").textContent = pass
+    ? (contest ? "咏春比赛专用 · 达成" : "过关。下一课。")
+    : (contest ? "咏春比赛专用 · 未达成" : "再来一课。");
+  $("resultBody").textContent =
+    `完成 ${step}/10 · 剩余 ${Math.ceil(left)}s · 谱：` +
+    SEQ.map((id) => MOVES[id].short).join("-");
+  $("overlay").classList.add("show");
+}
+
+function tryTapFallback() {
+  if (!running || step >= 10) return;
+  if (mode === "contest") return;
+  onHitValid();
+}
+
+$("btnMode").onclick = () => {
+  mode = mode === "drill" ? "contest" : "drill";
+  setModeUI();
+};
+$("btnStart").onclick = () => { start(); };
+$("btnAgain").onclick = () => { start(); };
+async function openCameraFromClick() {
+  const ok = await ensureCamera();
+  if (!ok) return;
+  try { await initPose(); } catch (e) { console.error(e); }
+}
+
+$("btnCam").onclick = () => { openCameraFromClick(); };
+$("btnCamDock").onclick = () => { openCameraFromClick(); };
+$("btnStrike").onclick = tryTapFallback;
+
+resetIdle();
+$("camStatus").textContent = "待开启 · 请点「开启摄像头」";
+$("note").textContent = secureHint() || "先点「开启摄像头」允许权限，再点开始（须 HTTPS 或 localhost；同目录需 mediapipe/）";
+
+$("btnRetryModel") && ($("btnRetryModel").onclick = () => {
+  poseLandmarker = null;
+  poseLoading = null;
+  PoseLandmarker = null;
+  FilesetResolver = null;
+  initPose().then(() => showBanner("模型已就绪", 1000)).catch((e) => {
+    showBanner("模型仍失败", 1400);
+    console.error(e);
+  });
+});
+
+(async () => {
+  try {
+    if (window.isSecureContext) await initPose();
+  } catch (e) {
+    console.error(e);
+    const msg = (e && (e.message || String(e))) || "未知错误";
+    $("camStatus").textContent = "模型失败";
+    $("note").textContent = "姿态模型预加载失败：" + msg + "。日课可用触控；可点「重试模型」或确认 mediapipe/ 同目录。";
+  }
+  predictLoop();
+})();
+</script>
+</body>
+</html>
