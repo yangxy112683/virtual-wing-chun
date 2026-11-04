@@ -696,13 +696,13 @@ async function initPose() {
       console.log("vision lib", src);
     }
     const wasmCandidates = [
+      new URL("./mediapipe", import.meta.url).href,
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm",
       "https://unpkg.com/@mediapipe/tasks-vision@0.10.18/wasm",
-      new URL("./mediapipe", import.meta.url).href,
     ];
     const modelCandidates = [
-      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
       new URL("./mediapipe/pose_landmarker_lite.task", import.meta.url).href,
+      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
     ];
     let lastErr = null;
     for (const wasm of wasmCandidates) {
