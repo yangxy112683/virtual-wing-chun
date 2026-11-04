@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- RELEASE_TAG: v1.0 | sample: drill-cam-v1.9 | hold=3s cooldown=2s dual-path TIME=60s -->
 <!-- virtual-wing-chun H5-CAM sample | content=v1.9 | release-tag=v1.0 | 2026-11-04 -->
-<!-- branch: cursor/h5-with-handmodel | next: MediaPipe Hand Landmarker -->
+<!-- branch: cursor/h5-with-handmodel | hand present layer; pose owns hits -->
 
 <html lang="zh-CN">
 <head>
@@ -261,6 +261,38 @@
     display: none;
   }
   .hold-meta.show { display: block; }
+
+  .hand-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 30%;
+    bottom: calc(148px + env(safe-area-inset-bottom, 0px));
+    z-index: 1;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .hand-overlay canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .hand-tag {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 2px;
+    z-index: 2;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #f3ebe0;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.85);
+  }
+  .hand-tag.cun { color: #ffd78a; }
+  .hand-tag.lost { color: rgba(232,215,195,0.78); }
 </style>
 </head>
 <body>
@@ -292,6 +324,10 @@
   </div>
 
   <div class="stage">
+    <div class="hand-overlay" id="handOverlay">
+      <div class="hand-tag" id="handTag" hidden role="status"></div>
+      <canvas id="handCanvas" aria-hidden="true"></canvas>
+    </div>
     <div class="dummy">
       <div class="pole"></div>
       <div class="arm lu" id="armLU"></div>
@@ -359,6 +395,7 @@
 </div>
 <script type="module">
 let PoseLandmarker = null;
+let HandLandmarker = null;
 let FilesetResolver = null;
 
 async function loadVisionLib() {
@@ -372,6 +409,7 @@ async function loadVisionLib() {
     try {
       const m = await import(url);
       PoseLandmarker = m.PoseLandmarker;
+      HandLandmarker = m.HandLandmarker || null;
       FilesetResolver = m.FilesetResolver;
       return url.includes("./mediapipe/") ? "local" : url;
     } catch (e) {
@@ -421,7 +459,13 @@ let holdLastTs = 0;
 let camReady = false;
 let poseLandmarker = null;
 let poseLoading = null;
+let handLandmarker = null;
+let handFailed = false;
+let handLoading = null;
+let handToken = 0;
+let visionSession = null;
 let lastVideoTime = -1;
+let lastSyncTs = -1;
 let stream = null;
 let lostStreak = 0;
 const LOST_FRAMES = 14; // ~0.2s+ before soft-pause; cuts false「回到框内」
@@ -676,6 +720,7 @@ async function ensureCamera() {
     $("camStatus").textContent = "识别中…";
     $("overlay").classList.remove("show");
     $("note").textContent = "点开始；对着镜头按当前招出式（日课可用触控演示）";
+    if (!handLandmarker) handFailed = false;
     return true;
   } catch (err) {
     camReady = false;
@@ -687,7 +732,10 @@ async function ensureCamera() {
 }
 
 async function initPose() {
-  if (poseLandmarker) return Promise.resolve(poseLandmarker);
+  if (poseLandmarker) {
+    if (!handLandmarker && !handFailed && visionSession) kickHand(visionSession.vision, visionSession.delegate);
+    return poseLandmarker;
+  }
   if (poseLoading) return poseLoading;
   $("camStatus").textContent = "加载识别模型…";
   $("note").textContent = "正在加载姿态模型（可先用触控演示开课）…";
@@ -724,8 +772,10 @@ async function initPose() {
               numPoses: 1,
             });
             console.log("pose ok", { wasm, model, delegate });
+            visionSession = { vision, delegate };
             $("camStatus").textContent = camReady ? "识别待命" : "模型就绪·请开摄像头";
-            $("note").textContent = "模型已就绪（" + delegate + "）。开摄像头后开始；日课可用触控。";
+            if (!running) $("note").textContent = "姿态已就绪，正在加载手模。日课与触控演示可用。";
+            kickHand(vision, delegate);
             return poseLandmarker;
           } catch (e) {
             lastErr = e;
@@ -741,6 +791,322 @@ async function initPose() {
     throw lastErr || new Error(msg);
   })();
   return poseLoading;
+}
+
+const PRESENT_MISS_GRACE_MS = 160;
+const PRESENT_LOST_HOLD_MS = 480;
+const PRESENT_LOST_FADE_MS = 1100;
+const PRESENT_CUN_MS = 720;
+
+function nextSyncTs(now) {
+  const ts = now <= lastSyncTs ? lastSyncTs + 0.001 : now;
+  lastSyncTs = ts;
+  return ts;
+}
+
+function shapeToPresent(shape) {
+  if (shape === "straight") return "punch_drive";
+  if (shape === "bridge") return "bong_bridge";
+  return "guard";
+}
+
+function wristAgrees(lm, shape) {
+  if (!lm || !lm[0] || !lm[12]) return false;
+  const dy = lm[12].y - lm[0].y;
+  if (shape === "straight") return dy < -0.012;
+  if (shape === "bridge") return dy > 0.012;
+  return true;
+}
+
+function canonicalAngle(drawPose, imageSide) {
+  if (drawPose === "guard") return -Math.PI / 2;
+  if (drawPose === "punch_drive") return imageSide === "imageLeft" ? -0.78 : Math.PI + 0.78;
+  return imageSide === "imageLeft" ? 0.78 : Math.PI - 0.78;
+}
+
+function resolveAngle(drawPose, lm, imageSide) {
+  const base = canonicalAngle(drawPose, imageSide);
+  if (drawPose === "guard" || !lm || !lm[0] || !lm[12]) return base;
+  const shape = drawPose === "punch_drive" ? "straight" : "bridge";
+  if (!wristAgrees(lm, shape)) return base;
+  const obs = Math.atan2(lm[12].y - lm[0].y, lm[12].x - lm[0].x);
+  let d = obs - base;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  if (Math.abs(d) > 1.05) return base;
+  return base + d * 0.28;
+}
+
+function palmScale(lm) {
+  const a = lm && lm[5];
+  const b = lm && lm[17];
+  if (!a || !b) return 1;
+  const span = Math.hypot(a.x - b.x, a.y - b.y);
+  if (!span) return 1;
+  return Math.min(1.35, Math.max(0.75, span / 0.1));
+}
+
+function presentAlphaAt(present, seenHand, lostAt, now) {
+  if (present !== "lost") return seenHand ? 0.92 : 0;
+  if (!lostAt) return 0;
+  const age = now - lostAt;
+  if (age < PRESENT_LOST_HOLD_MS) return 0.4;
+  const t = (age - PRESENT_LOST_HOLD_MS) / PRESENT_LOST_FADE_MS;
+  if (t >= 1) return 0;
+  return 0.4 * (1 - t);
+}
+
+function handLabel(present, seenHand, now, cunUntil) {
+  if (cunUntil && now < cunUntil) return "寸劲到位";
+  if (present === "punch_drive" || present === "bong_bridge") return "手模跟手中";
+  if (present === "lost" && seenHand) return "手模丢失，回到框内";
+  return "";
+}
+
+function presentColor(pose) {
+  if (pose === "punch_drive") return "232, 90, 42";
+  if (pose === "bong_bridge") return "58, 160, 200";
+  return "232, 215, 195";
+}
+
+function placeHand(hand, w, h, opts) {
+  const mirrorX = !!opts.mirrorX;
+  const xNorm = mirrorX ? 1 - hand.x : hand.x;
+  const pole = w * (opts.poleRatio == null ? 0.5 : opts.poleRatio);
+  let x = xNorm * w;
+  const gap = w * 0.12;
+  if (Math.abs(x - pole) < gap) x = x < pole ? pole - gap : pole + gap;
+  const margin = Math.max(12, w * 0.05);
+  x = Math.min(w - margin, Math.max(margin, x));
+  const yNorm = Math.min(1, Math.max(0, hand.y));
+  const y = opts.yMode === "lower-third"
+    ? h * (0.72 + 0.14 * yNorm)
+    : h * (0.56 + 0.18 * yNorm);
+  const angle = mirrorX ? Math.PI - hand.angle : hand.angle;
+  const base = opts.yMode === "lower-third" ? h * 0.055 : Math.min(h * 0.2, w * 0.075);
+  return { x, y, angle, unit: base * (hand.scale || 1) };
+}
+
+function strokeGhostHand(ctx, x, y, angle, unit, rgb, alpha, hold01, pulse) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(unit * (1 + 0.16 * pulse), unit * (1 + 0.16 * pulse));
+  ctx.globalAlpha = alpha;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgb(" + rgb + ")";
+  ctx.fillStyle = "rgb(" + rgb + ")";
+  ctx.lineWidth = 0.14 + hold01 * 0.08;
+  ctx.beginPath();
+  ctx.moveTo(-1.15, 0.22);
+  ctx.lineTo(0, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0.05, -0.28);
+  ctx.lineTo(0.55, -0.12);
+  ctx.lineTo(0.62, 0.22);
+  ctx.lineTo(0.08, 0.32);
+  ctx.closePath();
+  ctx.globalAlpha = alpha * (0.22 + hold01 * 0.4);
+  ctx.fill();
+  ctx.globalAlpha = alpha;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0.5, -0.12);
+  ctx.lineTo(1.15, -0.22);
+  ctx.moveTo(0.58, 0.02);
+  ctx.lineTo(1.28, 0.02);
+  ctx.moveTo(0.5, 0.16);
+  ctx.lineTo(1.12, 0.24);
+  ctx.stroke();
+  if (pulse > 0.05) {
+    ctx.globalAlpha = alpha * pulse;
+    ctx.strokeStyle = "rgb(255, 214, 140)";
+    ctx.lineWidth = 0.08;
+    ctx.beginPath();
+    ctx.arc(0.32, 0, 0.55 + 0.18 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function createHandViewState() {
+  let present = "guard";
+  let drawPose = "guard";
+  let seenHand = false;
+  let tracking = false;
+  let missingSince = 0;
+  let lostAt = 0;
+  let cunUntil = 0;
+  let hold01 = 0;
+  let frozen = [];
+
+  function remember(shape, handLandmarks) {
+    const nextPose = shapeToPresent(shape);
+    const next = [];
+    const list = handLandmarks || [];
+    for (let i = 0; i < list.length && next.length < 2; i++) {
+      const lm = list[i];
+      if (!lm || !lm[0] || lm[0].x == null || lm[0].y == null) continue;
+      const imageSide = lm[0].x < 0.5 ? "imageLeft" : "imageRight";
+      next.push({
+        x: lm[0].x,
+        y: lm[0].y,
+        scale: palmScale(lm),
+        angle: resolveAngle(nextPose, lm, imageSide),
+      });
+    }
+    return { nextPose, next };
+  }
+
+  return {
+    onPoseShape(shape, handLandmarks) {
+      const packed = remember(shape, handLandmarks);
+      if (!packed.next.length) {
+        this.onTrackLost(performance.now());
+        return;
+      }
+      seenHand = true;
+      tracking = true;
+      missingSince = 0;
+      lostAt = 0;
+      present = packed.nextPose;
+      drawPose = packed.nextPose;
+      frozen = packed.next;
+    },
+    onHitOk() {
+      cunUntil = performance.now() + PRESENT_CUN_MS;
+    },
+    onHoldProgress(p) {
+      hold01 = p > 0 ? Math.min(1, p) : 0;
+    },
+    onTrackLost(now) {
+      if (!seenHand) return;
+      if (tracking) {
+        tracking = false;
+        missingSince = now;
+      }
+      if (present !== "lost" && missingSince && now - missingSince >= PRESENT_MISS_GRACE_MS) {
+        present = "lost";
+        lostAt = now;
+      }
+    },
+    paint(ctx, w, h, opts) {
+      const now = performance.now();
+      const alpha = presentAlphaAt(present, seenHand, lostAt, now);
+      if (alpha <= 0.01 || !frozen.length) return;
+      const pulse = cunUntil && now < cunUntil
+        ? Math.sin(Math.min(1, (PRESENT_CUN_MS - (cunUntil - now)) / 220) * Math.PI) || 0
+        : 0;
+      const pulseClamped = pulse > 0 ? pulse : 0;
+      ctx.save();
+      if (opts.yMode === "lower-third") {
+        ctx.beginPath();
+        ctx.rect(0, h * (2 / 3), w, h / 3);
+        ctx.clip();
+      }
+      const rgb = presentColor(drawPose);
+      for (let i = 0; i < frozen.length; i++) {
+        const at = placeHand(frozen[i], w, h, opts);
+        strokeGhostHand(ctx, at.x, at.y, at.angle, at.unit, rgb, alpha, hold01, pulseClamped);
+      }
+      ctx.restore();
+    },
+    paintStage() {
+      const now = performance.now();
+      const canvas = $("handCanvas");
+      const tag = $("handTag");
+      const host = $("handOverlay");
+      if (host) host.dataset.present = present;
+      if (tag) {
+        const text = handLabel(present, seenHand, now, cunUntil);
+        const cls = "hand-tag" + (text === "寸劲到位" ? " cun" : text === "手模丢失，回到框内" ? " lost" : "");
+        if (tag.textContent !== text) tag.textContent = text;
+        if (tag.className !== cls) tag.className = cls;
+        tag.hidden = !text;
+      }
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.max(1, Math.round(rect.width * dpr));
+      const h = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, w, h);
+      this.paint(ctx, w, h, { mirrorX: true, yMode: "fill", poleRatio: 0.58, clear: false });
+    },
+  };
+}
+
+const handViewState = createHandViewState();
+
+function kickHand(vision, delegate) {
+  initHand(vision, delegate).then((ok) => {
+    if (running) return;
+    $("note").textContent = ok
+      ? "姿态与手模已就绪（" + delegate + "）。开摄像头后开始；日课可用触控。"
+      : "姿态已就绪，手模未加载。日课与触控演示仍可用。";
+  }).catch((err) => console.warn("hand", err));
+}
+
+async function initHand(vision, preferredDelegate) {
+  if (handLandmarker) return true;
+  if (handFailed) return false;
+  if (!HandLandmarker || !vision) {
+    handFailed = true;
+    return false;
+  }
+  if (handLoading) return handLoading;
+  const token = handToken;
+  const job = (async () => {
+    const modelCandidates = [
+      "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+      new URL("./mediapipe/hand_landmarker.task", import.meta.url).href,
+    ];
+    const first = preferredDelegate === "GPU" ? "GPU" : "CPU";
+    const delegates = [first, first === "CPU" ? "GPU" : "CPU"];
+    let lastErr = null;
+    for (const model of modelCandidates) {
+      for (const delegate of delegates) {
+        if (token !== handToken) return false;
+        try {
+          const created = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: model, delegate },
+            runningMode: "VIDEO",
+            numHands: 2,
+          });
+          if (token !== handToken) {
+            if (created && created.close) {
+              try { created.close(); } catch (err) { console.warn(err); }
+            }
+            return false;
+          }
+          handLandmarker = created;
+          console.log("hand ok", { model, delegate });
+          return true;
+        } catch (e) {
+          lastErr = e;
+          console.warn("hand fail", model, delegate, e);
+        }
+      }
+    }
+    if (token === handToken) {
+      handFailed = true;
+      console.warn("hand present unavailable", lastErr);
+    }
+    return false;
+  })();
+  handLoading = job;
+  try {
+    return await job;
+  } finally {
+    if (handLoading === job) handLoading = null;
+  }
 }
 
 function flash(ok) {
@@ -774,6 +1140,7 @@ function onHitValid() {
   holdAccum = 0;
   holdLastTs = 0;
   flash(true);
+  handViewState.onHitOk();
   step += 1;
   $("count").textContent = step + " / 10 · 识别：ok";
   if (step >= 10) {
@@ -917,43 +1284,66 @@ function applyCandidate(c) {
 
 
 function predictLoop() {
-  const video = $("video");
-  if (!poseLandmarker || !camReady || video.readyState < 2) {
-    requestAnimationFrame(predictLoop);
-    return;
-  }
-  if (video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-    const result = poseLandmarker.detectForVideo(video, performance.now());
-    const canvas = $("overlayCanvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (result.landmarks && result.landmarks[0]) {
-      const lm = result.landmarks[0];
-      // light joint dots only (no full skeleton) — 体验禁止全屏骨架
-      const arm = pickArm(lm);
-      if (arm) {
-        ctx.fillStyle = "rgba(232,215,195,0.85)";
-        for (const p of [arm.sh, arm.el, arm.wr]) {
-          ctx.beginPath();
-          ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2);
-          ctx.fill();
+  try {
+    const video = $("video");
+    if (poseLandmarker && camReady && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+      lastVideoTime = video.currentTime;
+      const syncTs = nextSyncTs(performance.now());
+      const result = poseLandmarker.detectForVideo(video, syncTs);
+      let handPoints = null;
+      if (handLandmarker) {
+        try {
+          const handResult = handLandmarker.detectForVideo(video, syncTs);
+          handPoints = (handResult && handResult.landmarks) || [];
+        } catch (err) {
+          console.warn("hand frame", err);
+          handPoints = [];
         }
-        ctx.strokeStyle = "rgba(232,90,42,0.7)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(arm.sh.x * canvas.width, arm.sh.y * canvas.height);
-        ctx.lineTo(arm.el.x * canvas.width, arm.el.y * canvas.height);
-        ctx.lineTo(arm.wr.x * canvas.width, arm.wr.y * canvas.height);
-        ctx.stroke();
       }
-      applyCandidate(classifyPose(lm));
-    } else if (running) {
-      applyCandidate({ shape: "unknown", quality: "lost", confidence: 0, detail: "无人" });
+      const lm = result && result.landmarks && result.landmarks[0];
+      const candidate = lm
+        ? classifyPose(lm)
+        : { shape: "unknown", quality: "lost", confidence: 0, detail: "无人" };
+      if (handPoints) {
+        if (handPoints.length) handViewState.onPoseShape(candidate.shape, handPoints);
+        else handViewState.onTrackLost(syncTs);
+      }
+      if (lm || running) applyCandidate(candidate);
+      handViewState.onHoldProgress(running && holdAccum > 0 ? holdAccum / HOLD_PASS_MS : 0);
+
+      const canvas = $("overlayCanvas");
+      const ctx = canvas.getContext("2d");
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      handViewState.paint(ctx, canvas.width, canvas.height, {
+        mirrorX: false,
+        yMode: "lower-third",
+        poleRatio: 0.5,
+      });
+      if (lm) {
+        const arm = pickArm(lm);
+        if (arm) {
+          ctx.fillStyle = "rgba(232,215,195,0.85)";
+          for (const p of [arm.sh, arm.el, arm.wr]) {
+            ctx.beginPath();
+            ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.strokeStyle = "rgba(232,90,42,0.7)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(arm.sh.x * canvas.width, arm.sh.y * canvas.height);
+          ctx.lineTo(arm.el.x * canvas.width, arm.el.y * canvas.height);
+          ctx.lineTo(arm.wr.x * canvas.width, arm.wr.y * canvas.height);
+          ctx.stroke();
+        }
+      }
     }
+  } catch (err) {
+    console.error(err);
   }
+  try { handViewState.paintStage(); } catch (err) { console.error(err); }
   requestAnimationFrame(predictLoop);
 }
 
@@ -965,14 +1355,14 @@ async function start() {
     $("camStatus").textContent = "待开启";
     return;
   }
-  if (!poseLandmarker) {
-    try { await initPose(); }
-    catch (e) {
-      const msg = (e && (e.message || String(e))) || "未知错误";
+  try { await initPose(); }
+  catch (e) {
+    const msg = (e && (e.message || String(e))) || "未知错误";
+    if (!poseLandmarker) {
       $("camStatus").textContent = "模型失败";
       $("note").textContent = "姿态模型加载失败：" + msg + "。日课可用触控演示；可点「重试模型」。";
-      console.error(e);
     }
+    console.error(e);
   }
   if (!okCam && mode === "drill") {
     showBanner("摄像头未开，可用触控演示跑谱", 1800);
@@ -1018,6 +1408,7 @@ $("btnAgain").onclick = () => { start(); };
 async function openCameraFromClick() {
   const ok = await ensureCamera();
   if (!ok) return;
+  if (!handLandmarker) handFailed = false;
   try { await initPose(); } catch (e) { console.error(e); }
 }
 
@@ -1030,16 +1421,25 @@ $("camStatus").textContent = "待开启 · 请点「开启摄像头」";
 $("note").textContent = secureHint() || "先点「开启摄像头」允许权限，再点开始（须 HTTPS 或 localhost；同目录需 mediapipe/）";
 
 $("btnRetryModel") && ($("btnRetryModel").onclick = () => {
+  if (handLandmarker && handLandmarker.close) {
+    try { handLandmarker.close(); } catch (err) { console.warn(err); }
+  }
+  handToken += 1;
+  handLandmarker = null;
+  handFailed = false;
+  handLoading = null;
   poseLandmarker = null;
   poseLoading = null;
   PoseLandmarker = null;
+  HandLandmarker = null;
   FilesetResolver = null;
-  initPose().then(() => showBanner("模型已就绪", 1000)).catch((e) => {
+  initPose().then(() => showBanner(handLandmarker ? "姿态与手模已就绪" : "姿态已就绪", 1000)).catch((e) => {
     showBanner("模型仍失败", 1400);
     console.error(e);
   });
 });
 
+predictLoop();
 (async () => {
   try {
     if (window.isSecureContext) await initPose();
@@ -1049,7 +1449,6 @@ $("btnRetryModel") && ($("btnRetryModel").onclick = () => {
     $("camStatus").textContent = "模型失败";
     $("note").textContent = "姿态模型预加载失败：" + msg + "。日课可用触控；可点「重试模型」或确认 mediapipe/ 同目录。";
   }
-  predictLoop();
 })();
 </script>
 </body>

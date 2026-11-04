@@ -14,13 +14,24 @@
 `HandPresent`∈{`guard`,`punch_drive`,`bong_bridge`,`lost`}。动作语义只跟冲／膀，无手指戏。`HandViewState` 挂接 `onPoseShape`、`onHitOk`、`onHoldProgress`、`onTrackLost`。这些钩子只更新手模呈现与寸劲反馈。
 
 ## 下一步
-- [ ] 接入 HandLandmarker 加载与权限同路径
-- [ ] 腕点与冲／膀方向一致性启发
+- [x] 接入 HandLandmarker 加载与权限同路径
+- [x] 腕点与冲／膀方向一致性启发
 - [ ] 竖屏 390 宽可读性复验（C4）
-- [ ] 同帧时间戳对齐 Pose+Hand
-- [ ] 腕根驱动手模 + 丢失淡出
+- [x] 同帧时间戳对齐 Pose+Hand
+- [x] 腕根驱动手模 + 丢失淡出
 
 未合 main；Pages 仍指当前分享版。
+
+## 表现层落地（本分支，未合 main）
+
+`docs/h5/drill-cam-v1.0.html` 已接上表现层。`HOLD_PASS_MS`、击后冷却、60s 与十击谱未改。Hand 不进入 `classifyPose`，不写 `confidence`。
+
+- 加载：摄像头权限成功后的同一条 `initPose` 路径创建 HandLandmarker，且不阻塞开课。模型先取 Google 存储 CDN，再试 `docs/h5/mediapipe/hand_landmarker.task`。失败或仍在下载时，Pose 日课与触控演示继续。
+- 同帧：视频 `currentTime` 变化时取一个时间戳，同时交给 Pose 与 Hand。不把上一帧手点配到本帧姿态。
+- 腕根：landmark 0 驱动虚手根，并避开木人中线。指尖相对腕只在与当前冲／膀同向时，把绘制角向该方向轻推；反向时仍用斜上／斜下规范角。护手不跟手指。
+- 画面：简化掌加前臂画在 `overlayCanvas` 下约 1/3，并在舞台下约 30% 再画一层。靶臂高亮（`armRU`／`arm.mid` 的 `z-index`）压过舞台虚手。
+- 丢失：先短暂留姿，再降透明，然后较长淡出。单帧漏检不立刻切短签。
+- 未在此环境验证：Safari 实机，以及竖屏 390 宽的 C4 可读门。
 
 ## 手模 ↔ 摄像头同步口径（对照 FPV 参考图）
 
