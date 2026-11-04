@@ -4,6 +4,7 @@
 <!-- branch: cursor/h5-landscape-layout | landscape stage; pose owns hits -->
 <!-- branch: cursor/h5-dummy-scale-22c8 | portrait dummy scale; pose owns hits -->
 <!-- branch: cursor/h5-hand-scale-e704 | skinned hand length ~1/3 landscape width -->
+<!-- branch: cursor/hand-overlay-smooth-ac80 | display lerp + wrist hysteresis; pose owns hits -->
 
 <html lang="zh-CN">
 <head>
@@ -998,6 +999,11 @@ const PRESENT_MISS_GRACE_MS = 160;
 const PRESENT_LOST_HOLD_MS = 480;
 const PRESENT_LOST_FADE_MS = 1100;
 const PRESENT_CUN_MS = 720;
+const PRESENT_SMOOTH_MS = 45;
+const WRIST_AGREE_ENTER = 0.02;
+const WRIST_AGREE_HOLD = 0.006;
+const SIDE_FLIP_MARGIN = 0.02;
+const wristAgreeLatch = { Left: "", Right: "" };
 
 function nextSyncTs(now) {
   const ts = now <= lastSyncTs ? lastSyncTs + 0.001 : now;
@@ -1011,12 +1017,18 @@ function shapeToPresent(shape) {
   return "guard";
 }
 
-function wristAgrees(lm, shape) {
-  if (!lm || !lm[0] || !lm[12]) return false;
+function wristAgrees(lm, shape, side) {
+  const key = side === "Right" ? "Right" : "Left";
+  if (!lm || !lm[0] || !lm[12] || (shape !== "straight" && shape !== "bridge")) {
+    wristAgreeLatch[key] = "";
+    return false;
+  }
   const dy = lm[12].y - lm[0].y;
-  if (shape === "straight") return dy < -0.012;
-  if (shape === "bridge") return dy > 0.012;
-  return true;
+  const amount = shape === "straight" ? -dy : dy;
+  const held = wristAgreeLatch[key] === shape;
+  const next = held ? amount > WRIST_AGREE_HOLD : amount > WRIST_AGREE_ENTER;
+  wristAgreeLatch[key] = next ? shape : "";
+  return next;
 }
 
 function canonicalAngle(drawPose, imageSide) {
@@ -1025,11 +1037,15 @@ function canonicalAngle(drawPose, imageSide) {
   return imageSide === "imageLeft" ? 0.78 : Math.PI - 0.78;
 }
 
-function resolveAngle(drawPose, lm, imageSide) {
+function resolveAngle(drawPose, lm, imageSide, handSide) {
   const base = canonicalAngle(drawPose, imageSide);
-  if (drawPose === "guard" || !lm || !lm[0] || !lm[12]) return base;
+  const key = handSide === "Right" ? "Right" : "Left";
+  if (drawPose === "guard" || !lm || !lm[0] || !lm[12]) {
+    wristAgreeLatch[key] = "";
+    return base;
+  }
   const shape = drawPose === "punch_drive" ? "straight" : "bridge";
-  if (!wristAgrees(lm, shape)) return base;
+  if (!wristAgrees(lm, shape, handSide)) return base;
   const obs = Math.atan2(lm[12].y - lm[0].y, lm[12].x - lm[0].x);
   let d = obs - base;
   while (d > Math.PI) d -= Math.PI * 2;
@@ -1202,6 +1218,34 @@ function drawSkinHand(ctx, img, at, h, alpha, pulse) {
   return true;
 }
 
+function lerpAngle(from, to, t) {
+  let d = to - from;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return from + d * t;
+}
+
+function approachHand(prev, target, t) {
+  if (!prev || t >= 1) {
+    return {
+      x: target.x,
+      y: target.y,
+      scale: target.scale,
+      angle: target.angle,
+      side: target.side,
+      drawPose: target.drawPose,
+    };
+  }
+  return {
+    x: prev.x + (target.x - prev.x) * t,
+    y: prev.y + (target.y - prev.y) * t,
+    scale: prev.scale + (target.scale - prev.scale) * t,
+    angle: lerpAngle(prev.angle, target.angle, t),
+    side: target.side,
+    drawPose: target.drawPose,
+  };
+}
+
 function createHandViewState() {
   let present = "guard";
   let presence = "idle";
@@ -1213,6 +1257,47 @@ function createHandViewState() {
   let cunUntil = 0;
   let hold01 = 0;
   let frozen = [];
+  let displayHands = [];
+  let lastSmoothAt = 0;
+  let sideFlipSince = 0;
+
+  function wristGap(a, b) {
+    const ax = a.lm ? a.lm[0].x : a.x;
+    const ay = a.lm ? a.lm[0].y : a.y;
+    const bx = b.lm ? b.lm[0].x : b.x;
+    const by = b.lm ? b.lm[0].y : b.y;
+    return Math.hypot(ax - bx, ay - by);
+  }
+
+  function stableSides(split, now) {
+    if (split.presence !== "both" || !split.left || !split.right) return split;
+    let prevL = null;
+    let prevR = null;
+    for (let i = 0; i < frozen.length; i++) {
+      if (frozen[i].side === "Left") prevL = frozen[i];
+      else if (frozen[i].side === "Right") prevR = frozen[i];
+    }
+    if (!prevL || !prevR) {
+      sideFlipSince = 0;
+      return split;
+    }
+    const keep = wristGap(split.left, prevL) + wristGap(split.right, prevR);
+    const swap = wristGap(split.left, prevR) + wristGap(split.right, prevL);
+    if (keep <= swap + SIDE_FLIP_MARGIN) {
+      sideFlipSince = 0;
+      return split;
+    }
+    if (!sideFlipSince) sideFlipSince = now;
+    if (now - sideFlipSince < PRESENT_MISS_GRACE_MS) {
+      return {
+        presence: "both",
+        left: { lm: split.right.lm, side: "Left", score: split.right.score },
+        right: { lm: split.left.lm, side: "Right", score: split.left.score },
+      };
+    }
+    sideFlipSince = 0;
+    return split;
+  }
 
   function packOne(packet, action) {
     const lm = packet.lm;
@@ -1221,7 +1306,7 @@ function createHandViewState() {
       x: lm[0].x,
       y: lm[0].y,
       scale: palmScale(lm),
-      angle: resolveAngle(action, lm, imageSide),
+      angle: resolveAngle(action, lm, imageSide, packet.side),
       side: packet.side,
       drawPose: action,
     };
@@ -1239,13 +1324,18 @@ function createHandViewState() {
       cunUntil = 0;
       hold01 = 0;
       frozen = [];
+      displayHands = [];
+      lastSmoothAt = 0;
+      sideFlipSince = 0;
+      wristAgreeLatch.Left = "";
+      wristAgreeLatch.Right = "";
     },
     setPrompt(on) {
       promptBoth = !!on;
       if (promptBoth && presence === "idle") presence = "need_both";
     },
     sync(shape, packets, now) {
-      const split = splitHands(packets);
+      const split = stableSides(splitHands(packets), now);
       if (split.presence === "both") {
         const action = shapeToPresent(shape);
         seenBoth = true;
@@ -1266,6 +1356,7 @@ function createHandViewState() {
         return { presence: "both", action: present, holdOff: false };
       }
       frozen = [];
+      sideFlipSince = 0;
       presence = split.presence;
       present = seenBoth ? "lost" : "guard";
       drawPose = "guard";
@@ -1278,13 +1369,33 @@ function createHandViewState() {
       hold01 = p > 0 ? Math.min(1, p) : 0;
     },
     paint(ctx, w, h) {
-      if (presence !== "both" || frozen.length < 2) return;
+      if (presence !== "both" || frozen.length < 2) {
+        displayHands = [];
+        lastSmoothAt = 0;
+        return;
+      }
       const now = performance.now();
+      let t = 1;
+      if (lastSmoothAt) {
+        const dt = now - lastSmoothAt;
+        t = dt > 200 ? 1 : (dt <= 0 ? 0 : 1 - Math.exp(-dt / PRESENT_SMOOTH_MS));
+      }
+      lastSmoothAt = now;
+      const next = [];
+      for (let i = 0; i < frozen.length; i++) {
+        const target = frozen[i];
+        let prev = null;
+        for (let j = 0; j < displayHands.length; j++) {
+          if (displayHands[j].side === target.side) prev = displayHands[j];
+        }
+        next.push(approachHand(prev, target, t));
+      }
+      displayHands = next;
       const pulse = cunUntil && now < cunUntil
         ? Math.sin(Math.min(1, (PRESENT_CUN_MS - (cunUntil - now)) / 220) * Math.PI) || 0
         : 0;
-      for (let i = 0; i < frozen.length; i++) {
-        const at = placeHand(frozen[i], w, h);
+      for (let i = 0; i < displayHands.length; i++) {
+        const at = placeHand(displayHands[i], w, h);
         const img = skinImg[at.side];
         drawSkinHand(ctx, img, at, h, 0.94 + hold01 * 0.06, pulse > 0 ? pulse : 0);
       }
