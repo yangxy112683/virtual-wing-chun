@@ -6,7 +6,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>虚拟咏春 · H5-CAM v1.0.1（内容 v1.9 · 去遮挡）</title>
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>虚拟咏春 · H5-CAM v1.0.1（Safari 可分享）</title>
 <style>
   :root {
     --card: rgba(12, 10, 8, 0.82);
@@ -283,7 +285,7 @@
   </div>
 
   <div class="cam-wrap" id="camWrap">
-    <video id="video" playsinline muted autoplay></video>
+    <video id="video" playsinline webkit-playsinline muted autoplay></video>
     <canvas id="overlayCanvas"></canvas>
     <div class="cam-status" id="camStatus">摄像头未开</div>
   </div>
@@ -361,9 +363,9 @@ let FilesetResolver = null;
 async function loadVisionLib() {
   const errors = [];
   const candidates = [
-    new URL("./mediapipe/tasks-vision.js", import.meta.url).href,
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/+esm",
     "https://unpkg.com/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs",
+    new URL("./mediapipe/tasks-vision.js", import.meta.url).href,
   ];
   for (const url of candidates) {
     try {
@@ -637,7 +639,7 @@ function secureHint() {
     return "当前不是安全上下文（file:// 常被拦）。请用 localhost 或 HTTPS 打开后再点「开启摄像头」。";
   }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    return "本浏览器无 getUserMedia；请换 Chrome／Edge，并用 HTTPS 或 localhost。";
+    return "当前浏览器无法调摄像头。请用 Safari／Chrome，并用 HTTPS 或 localhost 打开（勿用 file://）。";
   }
   return "";
 }
@@ -654,10 +656,18 @@ async function ensureCamera() {
   }
   try {
     $("camStatus").textContent = "申请权限…";
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-    });
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+    } catch (e1) {
+      // Safari 常对 ideal 尺寸更严，降级再试
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "user" } },
+      });
+    }
     const video = $("video");
     video.srcObject = stream;
     await video.play();
