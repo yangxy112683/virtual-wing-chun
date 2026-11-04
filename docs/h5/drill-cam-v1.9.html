@@ -1,11 +1,12 @@
 <!DOCTYPE html>
+<!-- RELEASE_TAG: v1.0 | sample: drill-cam-v1.9 | hold=3s cooldown=2s dual-path TIME=60s -->
 <!-- virtual-wing-chun H5-CAM sample | content=v1.9 | release-tag=v1.0 | 2026-11-04 -->
 
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>虚拟咏春 · H5-CAM v1.0（内容 v1.9）</title>
+<title>虚拟咏春 · H5-CAM v1.0.1（内容 v1.9 · 去遮挡）</title>
 <style>
   :root {
     --card: rgba(12, 10, 8, 0.82);
@@ -25,7 +26,7 @@
       linear-gradient(180deg, #2a1c14 0%, #12100e 55%, #0a0908 100%);
   }
   .cam-wrap {
-    position: absolute; left: 8px; top: 118px; width: 112px; height: 150px;
+    position: absolute; left: 10px; top: 156px; width: 104px; height: 128px;
     z-index: 6; border-radius: 10px; overflow: hidden;
     background: #000; border: 2px solid rgba(232,215,195,0.55);
   }
@@ -48,8 +49,8 @@
   .hud {
     position: absolute; top: 28px; right: 10px; left: 10px; z-index: 8;
     background: var(--card); border: 1px solid rgba(196,60,46,0.55);
-    border-radius: 12px; padding: 8px 10px; pointer-events: none;
-    display: grid; grid-template-columns: 56px 1fr; gap: 8px; align-items: center;
+    border-radius: 12px; padding: 8px 10px 10px; pointer-events: none;
+    display: grid; grid-template-columns: 56px 1fr; gap: 8px; align-items: start;
   }
   .hud.urgent { box-shadow: 0 0 0 1px var(--red); }
   .timer-wrap { width: 52px; height: 52px; position: relative; }
@@ -65,7 +66,7 @@
   .instr { font-size: 10px; line-height: 1.35; color: #f0e6da; margin-top: 2px; }
   .count { font-size: 12px; margin-top: 2px; opacity: 0.85; }
   .seq {
-    position: absolute; top: 96px; left: 128px; right: 10px; z-index: 8;
+    position: static; margin-top: 6px;
     display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none;
   }
   .seq span {
@@ -109,8 +110,8 @@
   @keyframes blink2 { 50% { outline-color: rgba(58,160,200,0.2); } }
 
   .demo-card {
-    position: absolute; bottom: 12%; right: 3%;
-    width: min(28vw, 148px); max-width: 148px;
+    position: absolute; bottom: calc(148px + env(safe-area-inset-bottom, 0px)); right: 10px;
+    width: min(28vw, 136px); max-width: 136px;
     padding: 7px 8px 8px; border-radius: 12px;
     background: rgba(12,14,18,0.55); border: 1.5px solid rgba(232,90,42,0.75);
     box-shadow: 0 6px 16px rgba(0,0,0,0.28);
@@ -201,23 +202,31 @@
   }
   .banner.show { opacity: 1; }
 
-  .dock {
-    position: absolute; bottom: 14px; left: 10px; right: 10px; z-index: 10;
-    display: grid; grid-template-columns: 1fr 1.1fr 1.4fr; gap: 8px;
+  .bottom-chrome {
+    position: absolute; left: 10px; right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    z-index: 10; display: flex; flex-direction: column; gap: 6px;
   }
-  .dock button {
-    border: 0; border-radius: 10px; padding: 12px 6px;
+  .note {
+    position: static; margin: 0; padding: 0 2px;
+    font-size: 11px; line-height: 1.35; color: rgba(232,215,195,0.55); text-align: center;
+  }
+  .dock-tools {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
+  }
+  .dock-main {
+    display: grid; grid-template-columns: 1fr 1.3fr; gap: 8px;
+  }
+  .bottom-chrome button {
+    border: 0; border-radius: 10px; padding: 11px 6px;
     font-size: 13px; font-weight: 600; cursor: pointer;
   }
+  .dock-tools button { padding: 9px 4px; font-size: 12px; }
   .ghost { background: rgba(255,255,255,0.08); color: var(--ok); }
   .primary { background: var(--red); color: #fff; }
   .strike-btn { background: #2a6f8f; color: #fff; }
   .strike-btn:disabled, .strike-btn.hidden { opacity: 0.35; }
   .strike-btn.hidden { visibility: hidden; }
-  .note {
-    position: absolute; bottom: 62px; left: 10px; right: 10px; z-index: 8;
-    font-size: 11px; color: rgba(232,215,195,0.5); text-align: center;
-  }
   .overlay {
     position: absolute; inset: 0; background: rgba(0,0,0,0.62);
     display: none; align-items: center; justify-content: center; z-index: 20; padding: 24px;
@@ -231,6 +240,24 @@
   .card p { font-size: 13px; color: rgba(232,215,195,0.75); line-height: 1.5; margin-bottom: 16px; }
   .card button { width: 100%; border: 0; border-radius: 10px; padding: 12px; background: var(--red); color: #fff; font-weight: 600; margin-top: 8px; }
   .card .ghost-btn { background: rgba(255,255,255,0.1); }
+
+  .hold-track {
+    margin-top: 6px; height: 8px; border-radius: 99px;
+    background: rgba(255,255,255,0.1); overflow: hidden;
+    display: none;
+  }
+  .hold-track.show { display: block; }
+  .hold-bar {
+    height: 100%; width: 0%; border-radius: 99px;
+    transition: width 0.05s linear;
+  }
+  .hold-bar.punch { background: linear-gradient(90deg, #e85a2a, #ffb080); }
+  .hold-bar.bong { background: linear-gradient(90deg, #3aa0c8, #9ad8ef); }
+  .hold-meta {
+    margin-top: 3px; font-size: 10px; color: rgba(232,215,195,0.75);
+    display: none;
+  }
+  .hold-meta.show { display: block; }
 </style>
 </head>
 <body>
@@ -247,11 +274,13 @@
     </div>
     <div class="hud-main">
       <div class="step-tag punch" id="stepTag">第 1/10 击 · 日字冲拳（右上）</div>
-      <div class="instr" id="instr">交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；每次有效识别间隔 6 秒。</div>
+      <div class="instr" id="instr">交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。</div>
       <div class="count" id="count">0 / 10 · 识别：—</div>
+      <div class="hold-track" id="holdTrack"><div class="hold-bar punch" id="holdBar"></div></div>
+      <div class="hold-meta" id="holdMeta"></div>
+      <div class="seq" id="seq"></div>
     </div>
   </div>
-  <div class="seq" id="seq"></div>
 
   <div class="cam-wrap" id="camWrap">
     <video id="video" playsinline muted autoplay></video>
@@ -303,13 +332,17 @@
     <div class="banner" id="banner"></div>
   </div>
 
-  <p class="note" id="note">先点「开启摄像头」申请权限（须 HTTPS／localhost）；对准上半身按谱出冲或膀</p>
-  <div class="dock">
-    <button class="ghost" id="btnMode" type="button">日课</button>
-    <button class="ghost" id="btnCamDock" type="button">开启摄像头</button>
-    <button class="ghost" id="btnRetryModel" type="button">重试模型</button>
-    <button class="primary" id="btnStart" type="button">开始</button>
-    <button class="strike-btn" id="btnStrike" type="button" disabled>触控演示</button>
+  <div class="bottom-chrome">
+    <p class="note" id="note">先点「开启摄像头」申请权限（须 HTTPS／localhost）；对准上半身按谱出冲或膀</p>
+    <div class="dock-tools">
+      <button class="ghost" id="btnMode" type="button">日课</button>
+      <button class="ghost" id="btnCamDock" type="button">开启摄像头</button>
+      <button class="ghost" id="btnRetryModel" type="button">重试模型</button>
+    </div>
+    <div class="dock-main">
+      <button class="primary" id="btnStart" type="button">开始</button>
+      <button class="strike-btn" id="btnStrike" type="button" disabled>触控演示</button>
+    </div>
   </div>
 
   <div class="overlay" id="overlay">
@@ -350,8 +383,8 @@ const B = "bong_sau";
 // 锁定谱：冲-膀-冲-冲-膀-冲-膀-冲-冲-膀
 const SEQ = [P, B, P, P, B, P, B, P, P, B];
 const TIME_LIMIT = 60;
-const POST_HIT_COOLDOWN = 2000; // Owner：冷却 2s // 每次有效识别间隔 2s
-const HOLD_PASS_MS = 3000; // Owner：维持 3s // Owner：对上当前形连续维持 3 秒才计击
+const POST_HIT_COOLDOWN = 2000; // 有效击后冷却 2s
+const HOLD_PASS_MS = 3000; // 对谱形连续维持 3s 过关（与瞬时 ok 双路径）
 const HOLD_FRAMES = 5; // legacy unused
 const WRONG_COOLDOWN = 800;
 
@@ -571,14 +604,14 @@ function setPaused(on) {
 function resetIdle() {
   step = 0; left = TIME_LIMIT; running = false; lastHitAt = 0; lastWrongAt = 0;
   holdShape = null; holdCount = 0; holdAccum = 0; holdLastTs = 0; paused = false;
-  const hb = $("holdBar"); if (hb) { hb.style.width = "0%"; hb.style.display = "none"; }
+  setHoldUI(false);
   $("count").textContent = "0 / 10 · 识别：—";
   $("timerText").textContent = Math.ceil(left);
   $("ring").style.strokeDashoffset = "0";
   $("hud").classList.remove("urgent");
   $("overlay").classList.remove("show");
   $("btnStrike").disabled = mode === "contest";
-  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；每次有效识别间隔 6 秒。";
+  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。";
   $("note").textContent = camReady
     ? "点开始；对着镜头按当前招出式（日课可用触控演示）"
     : "先开摄像头（需 HTTPS／本机服务），再点开始";
@@ -737,7 +770,7 @@ function onHitValid() {
     return;
   }
   applyStepVisual();
-  showBanner("下一击 2 秒后可识别", 1800);
+  showBanner("冷却中 · 2 秒后可下一击", 1200);
 }
 
 function onHitWrong(msg) {
@@ -746,6 +779,30 @@ function onHitWrong(msg) {
   lastWrongAt = now;
   flash(false);
   showBanner(msg || ("须出" + required().name), 800);
+}
+
+
+function setHoldUI(on, sil, sec, pct) {
+  const track = $("holdTrack");
+  const bar = $("holdBar");
+  const meta = $("holdMeta");
+  if (!track || !bar) return;
+  if (!on) {
+    track.classList.remove("show");
+    if (meta) meta.classList.remove("show");
+    bar.style.width = "0%";
+    bar.style.display = "none";
+    return;
+  }
+  track.classList.add("show");
+  bar.style.display = "block";
+  bar.className = "hold-bar " + (sil || "punch");
+  bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+  if (meta) {
+    meta.classList.add("show");
+    const name = sil === "bong" ? "膀态维持中" : "冲态维持中";
+    meta.textContent = name + " " + sec.toFixed(1) + "/3s · " + Math.round(pct) + "%";
+  }
 }
 
 function applyCandidate(c) {
@@ -783,6 +840,7 @@ function applyCandidate(c) {
     holdLastTs = 0;
     holdShape = null;
     holdCount = 0;
+    setHoldUI(false);
     return;
   }
 
@@ -792,6 +850,7 @@ function applyCandidate(c) {
     holdLastTs = 0;
     holdShape = null;
     holdCount = 0;
+    setHoldUI(false);
     $("camStatus").textContent = label;
     return;
   }
@@ -802,29 +861,25 @@ function applyCandidate(c) {
     holdCount = 0;
     holdAccum = 0;
     holdLastTs = 0;
+    setHoldUI(false);
     onHitWrong("须出" + need.name);
     $("camStatus").textContent = label;
     return;
   }
 
-  // 路径 B：ok 或 near 均可蓄 5s 维持
+  // 路径 B：ok 或 near 均可蓄 3s 维持
   if (c.quality === "ok" || c.quality === "near") {
     if (holdShape === c.shape && holdLastTs) holdAccum += now - holdLastTs;
     else { holdShape = c.shape; holdAccum = 0; }
     holdLastTs = now;
-    const sec = Math.min(3, holdAccum / 1000);
+    const sec = Math.min(HOLD_PASS_MS / 1000, holdAccum / 1000);
     const pct = Math.floor((holdAccum / HOLD_PASS_MS) * 100);
     const tag = need.sil === "punch" ? "冲态维持中" : "膀态维持中";
+    setHoldUI(true, need.sil, sec, pct);
     $("camStatus").textContent = tag + " " + sec.toFixed(1) + "/3s · " + pct + "%";
     $("count").textContent = `${step} / 10 · ${tag} ${pct}%`;
-    const bar = $("holdBar");
-    if (bar) {
-      bar.style.display = "block";
-      bar.style.width = Math.min(100, pct) + "%";
-      bar.className = "hold-bar " + need.sil;
-    }
     if (holdAccum >= HOLD_PASS_MS) {
-      if (bar) bar.style.display = "none";
+      setHoldUI(false);
       onHitValid();
       return;
     }
@@ -838,8 +893,7 @@ function applyCandidate(c) {
     if (holdShape === c.shape) holdCount += 1;
     else { holdCount = 1; }
     if (holdCount >= HOLD_FRAMES) {
-      const bar = $("holdBar");
-      if (bar) bar.style.display = "none";
+      setHoldUI(false);
       onHitValid();
       return;
     }
@@ -915,7 +969,7 @@ async function start() {
   running = true;
   if (mode !== "contest") $("btnStrike").disabled = false;
   endAt = performance.now() + TIME_LIMIT * 1000;
-  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；每次有效识别间隔 6 秒。";
+  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。";
   applyStepVisual();
   raf = requestAnimationFrame(tick);
 }
