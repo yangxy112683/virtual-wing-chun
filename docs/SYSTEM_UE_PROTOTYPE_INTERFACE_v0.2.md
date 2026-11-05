@@ -15,7 +15,7 @@
 
 1. Pose 独掌冲／膀命中。Hand 只发 `HandPresent`：`need_both`／`both`／`miss_*`（`miss_left`、`miss_right`）／`guard`／`punch_drive`／`bong_bridge`／`lost`。Hand 不写 `classifyPose`，不写 `confidence`。`punch_drive`／`bong_bridge` 只是呈现标签。
 2. 摄像头日课开课须同一帧同时有左手与右手。蒙皮叠层与护手只做呈现，不改 `HitValidate`。
-3. 叠层的位置、角度、缩放使用短窗平滑与 `wristAgrees` 滞回。`frozen` 是当帧瞬时目标，画面向它插值。tip 计划的固定车道与 `push` 可以同时存在。两套都只属于呈现，冲突时并列保留，都不进入 `HitValidate`。
+3. 叠层的位置、角度、缩放使用短窗平滑与 `wristAgrees` 滞回。`frozen` 是同帧瞬时目标，必须当帧立刻对齐，不得跟着约 45ms 的显示平滑拖尾。只有画面层的根位置、角度和 `palmScale` 向该 `frozen` 目标做短窗平滑，并带已写明的 `wristAgrees` 滞回与宽限。tip 计划的固定车道与 `push` 可以同时存在。两套都只属于呈现，冲突时并列保留，都不进入 `HitValidate`。
 4. 十击、60s、维持 3s、击后冷却 2s 不改。布局不进命中。
 
 ## 建议模块边界
@@ -50,14 +50,14 @@ Camera ─┬→ PoseIngress → PoseHitCandidate → InputRouter → StrikeInte
 debug_tap / F·J（仅日课）──────────→ InputRouter
 ```
 
-验收：同谱面下，摄像头认对与日课兜底成功须走同一 `FeedbackBus` 成功事件。`HandPresent`、蒙皮、车道 `push`、`frozen` 显示插值都不进 `HitValidate`。
+验收：同谱面下，摄像头认对与日课兜底成功须走同一 `FeedbackBus` 成功事件。`HandPresent`、蒙皮、车道 `push`、以及朝 `frozen` 的显示层插值都不进 `HitValidate`。`frozen` 本身当帧立刻对齐，不参与这档平滑。
 
 ## 呈现（不进 HitValidate）
 
 句子优先采用 tip 的 `HAND_MODEL_PLAN` 与 #12。二者冲突时都保留为呈现：
 
 - **车道（tip `6d632bb`）**：左手在杆左、右手在杆右。`push` 从 0 护手到 1 前推，以约 90ms 时间常数指数靠近目标。目标由 Pose 本侧达标或日课 F／J／触控脉冲驱动，不由 Hand 左右标签驱动。
-- **平滑（#12 `f66d847`）**：`frozen` 是当帧瞬时目标。画面上的根位置、角度和 `palmScale` 以约 45ms 时间常数向该目标指数靠近。`wristAgrees` 对指尖相对腕的 dy 用进入 0.02、保持 0.006 两档。左右标签只对调一帧时，在 `PRESENT_MISS_GRACE_MS` 内保持原侧精灵。静止时不跟单帧噪声跳。
+- **平滑（#12 `f66d847`）**：`frozen` 是同帧瞬时目标，必须当帧立刻对齐，不得跟着约 45ms 的显示平滑拖尾。只有画面层的根位置、角度和 `palmScale` 以约 45ms 时间常数向该 `frozen` 目标指数靠近。`wristAgrees` 对指尖相对腕的 dy 用进入 0.02、保持 0.006 两档。左右标签只对调一帧时，在 `PRESENT_MISS_GRACE_MS` 内保持原侧精灵。静止时不跟单帧噪声跳。
 
 蒙皮盖住骨架，不得挡住高亮靶臂。横屏可见长度约视口宽度 1/3。待机不抖；冲／膀跟随使用上面的短窗，不要发黏的滞后。计击保留木人臂闪光与音字，不显示「寸劲到位」。纯格斗游戏 HUD 底板、武侠分镜式堆叠禁止出现。细节见大纲 §2.5 与 §5。
 
