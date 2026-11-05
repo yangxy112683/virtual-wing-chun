@@ -91,6 +91,20 @@
   .seq span.done { background: rgba(232,215,195,0.2); color: var(--ok); }
   .seq span.cur.punch { background: rgba(232,90,42,0.35); color: #fff; border-color: var(--glow); }
   .seq span.cur.bong { background: rgba(58,160,200,0.35); color: #fff; border-color: var(--glow2); }
+  /* 已击序列：每击一个小块，按招式着色，宽度随文字 */
+  .hit-seq span {
+    width: auto; padding: 0 6px; border-radius: 5px; font-size: 9px; font-weight: 700;
+    display: grid; place-items: center; color: #fff;
+    border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.4);
+  }
+  .hit-seq span.punch {
+    background: rgba(232,90,42,0.35); border-color: rgba(232,90,42,0.6);
+  }
+  .hit-seq span.bong {
+    background: rgba(58,160,200,0.35); border-color: rgba(58,160,200,0.6);
+  }
+  /* 横屏样式给这两个元素写了 display: flex，单靠 hidden 属性藏不住 */
+  .demo-card[hidden], .seq[hidden] { display: none; }
 
   .stage { position: absolute; inset: 0; }
   /* 木桩实拍图层：铺在舞台最底层，四边渐隐到现有深色底 */
@@ -155,7 +169,7 @@
     box-shadow: 0 0 12px currentColor;
     pointer-events: none;
   }
-  /* 受击高亮：自带描边与色值，不依赖 target-* 类，本击的靶臂在 step++ 之后仍会闪 */
+  /* 受击高亮：自带描边与色值，不依赖 target-* 类，本击的靶臂在计击之后仍会闪 */
   .arm.hit {
     color: rgba(255,214,170,0.95);
     outline: 3px solid rgba(255,214,170,0.95);
@@ -585,7 +599,7 @@
       <div class="cam-status" id="camStatus">摄像头未开</div>
     </div>
 
-    <div class="demo-card" id="demoCard" aria-label="成功示范">
+    <div class="demo-card" id="demoCard" aria-label="成功示范" hidden>
       <div class="demo-label">成功示范</div>
       <div class="demo-cmd" id="demoCmd">斜上冲出</div>
       <div class="sil punch" id="sil">
@@ -653,12 +667,13 @@
         <div class="t" id="timerText">10.0</div>
       </div>
       <div class="hud-main">
-        <div class="step-tag punch" id="stepTag">第 1/10 击 · 日字冲拳（右上）</div>
-        <div class="instr" id="instr">交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。</div>
+        <div class="step-tag punch" id="stepTag" hidden>第 1/10 击 · 日字冲拳（右上）</div>
+        <div class="instr" id="instr">自由击桩 · 左右手可打任意桩手。1 分钟内有效击满 10 次；维持 1 秒或瞬时有效均可过；击后冷却 0.5 秒。</div>
         <div class="count" id="count">0 / 10</div>
         <div class="hold-track" id="holdTrack"><div class="hold-bar punch" id="holdBar"></div></div>
         <div class="hold-meta" id="holdMeta"></div>
-        <div class="seq" id="seq"></div>
+        <div class="seq" id="seq" hidden></div>
+        <div class="seq hit-seq" id="hitSeq"></div>
       </div>
     </div>
     <div class="bottom-chrome">
@@ -718,26 +733,25 @@ async function loadVisionLib() {
 
 const P = "yat_ji_chung_kuen";
 const B = "bong_sau";
-// 锁定谱：冲-膀-冲-冲-膀-冲-膀-冲-冲-膀
-const SEQ = [P, B, P, P, B, P, B, P, P, B];
 const TIME_LIMIT = 60;
-const POST_HIT_COOLDOWN = 2000; // 有效击后冷却 2s
-const HOLD_PASS_MS = 3000; // 对谱形连续维持 3s 过关（与瞬时 ok 双路径）
-const HOLD_FRAMES = 5; // legacy unused
-const WRONG_COOLDOWN = 800;
+const HIT_GOAL = 10;
+const POST_HIT_COOLDOWN = 500; // 有效击后冷却 0.5s
+const HOLD_PASS_MS = 1000; // 同一招连续维持 1s 过关（与瞬时 ok 双路径）
+const HOLD_FRAMES = 5; // 瞬时有效路径的连续帧去抖
 
 const MOVES = {
   yat_ji_chung_kuen: {
-    name: "日字冲拳", short: "冲", shape: "straight", partLabel: "右上",
-    armId: "armRU", ok: "笃", bad: "嗒", sil: "punch", targetClass: "target-punch",
-    cmd: "左手斜上冲出", demo: "左手斜上冲出即过 · 右上", side: "L",
+    name: "日字冲拳", short: "冲拳", shape: "straight",
+    armId: "armRU", ok: "笃", sil: "punch", targetClass: "target-punch",
   },
   bong_sau: {
-    name: "膀手", short: "膀", shape: "bridge", partLabel: "中桩",
-    armId: "armMid", ok: "沙—笃", bad: "嗒", sil: "bong", targetClass: "target-bong",
-    cmd: "右手斜下成式", demo: "右手斜下成式即过 · 中桩", side: "R",
+    name: "膀手", short: "膀手", shape: "bridge",
+    armId: "armMid", ok: "沙—笃", sil: "bong", targetClass: "target-bong",
   },
 };
+
+const MOVE_ID_OF_SHAPE = { straight: P, bridge: B };
+const moveOfShape = (shape) => MOVES[MOVE_ID_OF_SHAPE[shape]] || null;
 
 const ROUND_PHASE = Object.freeze({
   IDLE: "idle",
@@ -754,7 +768,7 @@ const ROUND_NEXT = Object.freeze({
 });
 
 let mode = "drill"; // drill | contest
-let step = 0;
+let hits = []; // 实际击打序列，元素为 { move, side }
 let left = TIME_LIMIT;
 let endAt = 0;
 let posePaused = false;
@@ -762,11 +776,12 @@ let pauseAnchor = 0;
 let raf = 0;
 let roundPhase = ROUND_PHASE.IDLE;
 let lastHitAt = 0;
-let lastWrongAt = 0;
-let holdShape = null;
+let holdKey = null; // side + shape，换手换招都算换键
 let holdCount = 0;
 let holdAccum = 0;
 let holdLastTs = 0;
+// 计过击的手臂须先换招、收回或出画才能再计
+const armLock = { L: null, R: null };
 let camReady = false;
 let poseLandmarker = null;
 let poseLoading = null;
@@ -798,20 +813,18 @@ function setCamStatus(text) {
 
 function setCountDetail(detail) {
   countDetail = detail || "";
-  $("count").textContent = formatCountLine(step, countDetail, debugMode);
+  $("count").textContent = formatCountLine(hits.length, countDetail, debugMode);
 }
 
 function setDebugMode(on) {
   debugMode = !!on;
   const el = $("camStatus");
   if (!debugMode) el.textContent = releaseDebugCaptureTip(el.textContent);
-  $("count").textContent = formatCountLine(step, countDetail, debugMode);
+  $("count").textContent = formatCountLine(hits.length, countDetail, debugMode);
   showBanner(debugMode ? "调试提示：开" : "调试提示：关", 800);
 }
 
 const circum = 2 * Math.PI * 28;
-const requiredId = () => SEQ[step];
-const required = () => MOVES[requiredId()];
 
 function angleDeg(a, b, c) {
   const ba = { x: a.x - b.x, y: a.y - b.y };
@@ -878,27 +891,26 @@ function scoreToCandidate(shape, side, score, dy) {
   return {
     shape,
     side,
+    score,
     quality: conf >= 0.58 ? "ok" : "near",
     confidence: conf,
     detail: (shape === "straight" ? "冲↑" : "膀↓") + ` dy=${dy.toFixed(2)}`,
   };
 }
 
-function classifyArm(lm, arm, spec) {
-  if (!inFrame(arm)) return { detail: spec.label + "出画" };
+/** 单臂判别：up 分与 down 分谁高就是谁，两臂两招都认 */
+function classifyArm(arm, label) {
+  if (!inFrame(arm)) return { detail: label + "出画" };
   const s = armScores(arm);
   if (s.weak) return { detail: s.weak };
-  if (s.upScore < 0.2 && s.downScore < 0.2) return { detail: spec.label + "方向不明" };
+  if (s.upScore < 0.2 && s.downScore < 0.2) return { detail: label + "方向不明" };
   if (s.upScore > 0 && s.downScore > 0 && Math.abs(s.upScore - s.downScore) < 0.12) {
-    return { detail: spec.label + "上下接近" };
+    return { detail: label + "上下接近" };
   }
-  const primary = spec.score === "up" ? s.upScore : s.downScore;
-  const other = spec.score === "up" ? s.downScore : s.upScore;
-  const wins = spec.score === "up" ? primary >= other : primary > other;
-  if (wins && primary >= 0.28) {
-    return { candidate: scoreToCandidate(spec.shape, spec.side, primary, s.dy) };
-  }
-  return { detail: spec.label + "弱特征" };
+  const up = s.upScore >= s.downScore;
+  const primary = up ? s.upScore : s.downScore;
+  if (primary < 0.28) return { detail: label + "弱特征" };
+  return { candidate: scoreToCandidate(up ? "straight" : "bridge", arm.side, primary, s.dy) };
 }
 
 function lostCandidate(detail) {
@@ -909,52 +921,55 @@ function nearCandidate(detail, side) {
   return { shape: "unknown", quality: "near", confidence: 0.2, detail, side: side || null };
 }
 
-function classifyPose(lm, move) {
-  const left = armOf(lm, "L");
-  const right = armOf(lm, "R");
-  const leftVisible = armVisible(left);
-  const rightVisible = armVisible(right);
-  if (!leftVisible && !rightVisible) return lostCandidate("无人");
-  if (!move) return nearCandidate("待开课");
-
-  const arm = move.side === "L" ? left : right;
-  const label = move.side === "L" ? "左臂" : "右臂";
-  if (!armVisible(arm) || !inFrame(arm)) return nearCandidate(label + "出画", move.side);
-
-  const found = classifyArm(lm, arm, {
-    side: move.side,
-    shape: move.shape,
-    score: move.shape === "straight" ? "up" : "down",
-    label,
-  });
-  return found.candidate || nearCandidate(found.detail || label + "弱特征", move.side);
+/** 两臂自由判定：都判同一时刻的招形，取分数高的一条；上锁的手臂跳过 */
+function classifyPose(lm, active) {
+  const arms = [armOf(lm, "L"), armOf(lm, "R")];
+  if (!arms.some(armVisible)) return lostCandidate("无人");
+  if (!active) return nearCandidate("待开课");
+  let best = null;
+  let detail = "";
+  for (const arm of arms) {
+    const label = arm.side === "L" ? "左臂" : "右臂";
+    const found = armVisible(arm) ? classifyArm(arm, label) : { detail: label + "出画" };
+    const c = found.candidate;
+    if (!c || c.shape !== armLock[arm.side]) armLock[arm.side] = null;
+    if (!c || armLock[arm.side]) {
+      detail = detail || found.detail || label + "待收招";
+      continue;
+    }
+    if (!best || c.score > best.score) best = c;
+  }
+  return best || nearCandidate(detail);
 }
 
-function buildSeqUI() {
-  const box = $("seq");
+/** 触控演示按已计击数的奇偶轮换：偶数次左手冲拳，奇数次右手膀手 */
+function nextTapMove() {
+  const leftPunch = hits.length % 2 === 0;
+  return leftPunch
+    ? { move: P, side: "L", name: "左手冲拳" }
+    : { move: B, side: "R", name: "右手膀手" };
+}
+
+/** 右栏实时序列：每计一击追加一个招式小块 */
+function buildHitSeqUI() {
+  const box = $("hitSeq");
+  if (!box) return;
   box.innerHTML = "";
-  SEQ.forEach((id, i) => {
+  hits.forEach((hit) => {
+    const mv = MOVES[hit.move];
     const sp = document.createElement("span");
-    const mv = MOVES[id];
     sp.textContent = mv.short;
-    sp.className = mv.sil + (i < step ? " done" : "") + (i === step ? " cur" : "");
+    sp.className = mv.sil;
     box.appendChild(sp);
   });
 }
 
-function applyStepVisual() {
-  if (step >= SEQ.length) return;
-  const cur = required();
-  $("armRU").className = "arm ru";
-  $("armMid").className = "arm mid";
-  $(cur.armId).classList.add(cur.targetClass);
-  $("sil").className = "sil " + cur.sil;
-  if ($("demoCmd")) $("demoCmd").textContent = cur.cmd || cur.short;
-  if ($("demoHint")) $("demoHint").textContent = cur.demo || (cur.short + " · " + cur.partLabel);
-  $("stepTag").textContent = `第 ${step + 1}/10 击 · ${cur.name}（${cur.partLabel}）`;
-  $("stepTag").className = "step-tag " + cur.sil;
-  $("btnStrike").textContent = "触控演示 · " + cur.name;
-  buildSeqUI();
+/** 两个靶区同时高亮，手模与触控按钮跟随自由击桩 */
+function applyHitVisual() {
+  $("armRU").className = "arm ru " + MOVES[P].targetClass;
+  $("armMid").className = "arm mid " + MOVES[B].targetClass;
+  $("btnStrike").textContent = "触控演示 · " + nextTapMove().name;
+  buildHitSeqUI();
 }
 
 function setModeUI() {
@@ -1010,8 +1025,9 @@ function setPaused(on) {
 }
 
 function resetIdle() {
-  step = 0; left = TIME_LIMIT; lastHitAt = 0; lastWrongAt = 0;
-  holdShape = null; holdCount = 0; holdAccum = 0; holdLastTs = 0;
+  hits = []; left = TIME_LIMIT; lastHitAt = 0;
+  holdKey = null; holdCount = 0; holdAccum = 0; holdLastTs = 0;
+  armLock.L = null; armLock.R = null;
   pendingImpact = null;
   posePaused = false;
   if (typeof handViewState !== "undefined" && handViewState.reset) handViewState.reset();
@@ -1022,7 +1038,7 @@ function resetIdle() {
   $("hud").classList.remove("urgent");
   $("overlay").classList.remove("show");
   $("btnStrike").disabled = mode === "contest";
-  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。";
+  $("instr").textContent = "自由击桩 · 左右手可打任意桩手。1 分钟内有效击满 10 次；维持 1 秒或瞬时有效均可过；击后冷却 0.5 秒。";
   $("note").textContent = camReady
     ? "点开始；双手入镜后开课。无摄像头可按 F/J 调试。"
     : "日课可直接开始（无摄像头按 F/J 调试）；开摄像头后须双手入镜。";
@@ -1030,7 +1046,7 @@ function resetIdle() {
   raf = 0;
   $("camWrap").classList.remove("lost");
   setRoundPhase(ROUND_PHASE.IDLE);
-  applyStepVisual();
+  applyHitVisual();
   setModeUI();
 }
 
@@ -1383,8 +1399,8 @@ function portraitHandH(w, h) {
 }
 */  /* 竖屏适配暂停 结束 */
 
-/** 固定车道：push 0 护手位（沿用旧车道），push 1 掌心落到本侧靶区。 */
-function laneHand(side, push, w, h) {
+/** 固定车道：push 0 护手位，push 1 掌心落到本手这一击对应的靶区。 */
+function laneHand(side, armId, push, w, h) {
   const p = Math.min(1, Math.max(0, push));
   // 竖屏适配暂停：只做横屏车道，非横屏也按横屏布局兜底
   const pole = w * stagePoleFrac;
@@ -1419,7 +1435,6 @@ function laneHand(side, push, w, h) {
   }
 
   // 接触位：掌心锚点压在靶区 .hit-pt 上，前臂从本侧画面下缘指向它
-  const armId = side === "Left" ? "armRU" : "armMid";
   const hit = p > 0.02 ? hitPointPx(armId, w, h) : null;
   // 到 0.97 就当已接触：吸到靶点，避免渐近值留下半像素误差
   const stretch = p > 0.97 ? 1 : p;
@@ -1532,8 +1547,8 @@ function drawDebug(ctx, w, h) {
   // 落点数值始终写到 dataset，便于自动化核对（不开 debug 也写）
   const ptRu = hitPointPx("armRU", w, h);
   const ptMid = hitPointPx("armMid", w, h);
-  const atL = laneHand("Left", handViewState.pushOf("L"), w, h);
-  const atR = laneHand("Right", handViewState.pushOf("R"), w, h);
+  const atL = laneHand("Left", handViewState.targetOf("L"), handViewState.pushOf("L"), w, h);
+  const atR = laneHand("Right", handViewState.targetOf("R"), handViewState.pushOf("R"), w, h);
   const fmt = (at) => at ? `${Math.round(at.x / w * 1000) / 10},${Math.round(at.y / h * 1000) / 10},${(at.reach || 0).toFixed(2)}` : "-";
   const dotFmt = (pt) => pt ? `${Math.round(pt.x / w * 1000) / 10},${Math.round(pt.y / h * 1000) / 10}` : "-";
   ctx.canvas.dataset.palmL = fmt(atL);
@@ -1582,6 +1597,20 @@ function drawDebug(ctx, w, h) {
   ctx.restore();
 }
 
+/** 一只手 + 一个招形对应的靶区：左手膀落到中桩，右手冲落到右上桩 */
+function targetArmOf(side, shape) {
+  if (shape === "bridge") return "armMid";
+  if (shape === "straight") return "armRU";
+  return side === "L" || side === "Left" ? "armRU" : "armMid";
+}
+
+function driveTagText(side, shape) {
+  if (!side || !shape) return "";
+  const hand = side === "L" ? "左手" : "右手";
+  const move = moveOfShape(shape);
+  return move ? hand + " · " + move.name : "";
+}
+
 function createHandViewState() {
   let present = "guard";
   let hold01 = 0;
@@ -1589,10 +1618,13 @@ function createHandViewState() {
   let pushR = 0;
   let targetL = 0;
   let targetR = 0;
+  let shapeL = null;
+  let shapeR = null;
   let pulseL = null;
   let pulseR = null;
   let lastSmoothAt = 0;
   let tagSide = null;
+  let tagShape = null;
 
   function pulseGoal(pulse, now) {
     if (!pulse) return null;
@@ -1615,10 +1647,31 @@ function createHandViewState() {
     return side === "L" ? targetL : targetR;
   }
 
-  function moveTagText() {
-    if (tagSide === "L") return "左手 · 日字冲拳";
-    if (tagSide === "R") return "右手 · 膀手";
-    return "";
+  function setDrive(side, shape) {
+    if (!side || (shape !== "straight" && shape !== "bridge")) return false;
+    if (side === "L") {
+      targetL = 1;
+      targetR = 0;
+      shapeL = shape;
+    } else {
+      targetR = 1;
+      targetL = 0;
+      shapeR = shape;
+    }
+    tagSide = side;
+    tagShape = shape;
+    present = shape === "straight" ? "punch_drive" : "bong_bridge";
+    return true;
+  }
+
+  function clearDrive() {
+    targetL = 0;
+    targetR = 0;
+    if (!pulseL && !pulseR) {
+      tagSide = null;
+      tagShape = null;
+      present = "guard";
+    }
   }
 
   return {
@@ -1629,51 +1682,48 @@ function createHandViewState() {
       pushR = 0;
       targetL = 0;
       targetR = 0;
+      shapeL = null;
+      shapeR = null;
       pulseL = null;
       pulseR = null;
       lastSmoothAt = 0;
       tagSide = null;
+      tagShape = null;
     },
-    pulse(side) {
+    /** 触控／F／J 脉冲：任意手打任意招 */
+    pulse(side, shape) {
       const now = performance.now();
+      const s = shape === "bridge" ? "bridge" : "straight";
       if (side === "L") {
         pulseL = { t0: now };
-        tagSide = "L";
+        shapeL = s;
       } else if (side === "R") {
         pulseR = { t0: now };
-        tagSide = "R";
+        shapeR = s;
+      } else {
+        return;
       }
+      tagSide = side;
+      tagShape = s;
     },
     setPoseDrive(side, shape, quality) {
       const active = quality === "ok" || quality === "near";
-      if (!active || !side || (shape !== "straight" && shape !== "bridge")) {
-        targetL = 0;
-        targetR = 0;
-        if (!pulseL && !pulseR) tagSide = null;
+      if (!active) {
+        clearDrive();
         return;
       }
-      if (side === "L" && shape === "straight") {
-        targetL = 1;
-        targetR = 0;
-        tagSide = "L";
-        present = "punch_drive";
-      } else if (side === "R" && shape === "bridge") {
-        targetR = 1;
-        targetL = 0;
-        tagSide = "R";
-        present = "bong_bridge";
-      } else {
-        targetL = 0;
-        targetR = 0;
-        if (!pulseL && !pulseR) tagSide = null;
-        present = "guard";
-      }
+      if (!setDrive(side, shape)) clearDrive();
     },
     onHitOk() {},
     onHoldProgress(p) {
       hold01 = p > 0 ? Math.min(1, p) : 0;
     },
-    /** 本侧当前前推量（0 护手 → 1 接触） */
+    /** 这只手当前前进的目标靶区 */
+    targetOf(side) {
+      const shape = side === "L" ? shapeL : shapeR;
+      return targetArmOf(side, shape);
+    },
+    /** 这只手当前前推量（0 护手 → 1 接触） */
     pushOf(side) {
       if (side === "L") return pushL;
       if (side === "R") return pushR;
@@ -1698,8 +1748,8 @@ function createHandViewState() {
       if (Math.abs(pushL) < 0.002) pushL = 0;
       if (Math.abs(pushR) < 0.002) pushR = 0;
       const alpha = 0.94 + hold01 * 0.06;
-      drawSkinHand(ctx, skinImg.Left, laneHand("Left", pushL, w, h), h, alpha);
-      drawSkinHand(ctx, skinImg.Right, laneHand("Right", pushR, w, h), h, alpha);
+      drawSkinHand(ctx, skinImg.Left, laneHand("Left", targetArmOf("L", shapeL), pushL, w, h), h, alpha);
+      drawSkinHand(ctx, skinImg.Right, laneHand("Right", targetArmOf("R", shapeR), pushR, w, h), h, alpha);
     },
     paintStage(visible) {
       const canvas = $("handCanvas");
@@ -1712,7 +1762,7 @@ function createHandViewState() {
       if (tag) {
         const text = !visible && camReady
           ? "请双手入镜"
-          : (visible && (pushL > 0.08 || pushR > 0.08 || tagSide) ? moveTagText() : "");
+          : (visible && (pushL > 0.08 || pushR > 0.08 || tagSide) ? driveTagText(tagSide, tagShape) : "");
         const cls = "hand-tag" + (text === "请双手入镜" ? " need" : "");
         if (tag.textContent !== text) tag.textContent = text;
         if (tag.className !== cls) tag.className = cls;
@@ -1812,6 +1862,7 @@ async function initHand(vision, preferredDelegate) {
   }
 }
 
+/** 落点由招形决定：冲打右上靶区，膀打中桩靶区 */
 function impactPoint(move) {
   const el = move && $(move.armId);
   const dot = el && el.querySelector(".hit-pt");
@@ -1827,11 +1878,11 @@ function impactPoint(move) {
 }
 
 /** 视觉反馈：靶臂闪光 + 冲击光圈 + 音字 + 轻抖。只做画面，不动判定。 */
-function flash(ok, move) {
-  const cur = move || required();
-  $("flash").className = "flash " + (ok ? "ok" : "bad");
+function flash(move) {
+  const cur = move;
+  $("flash").className = "flash ok";
   const s = $("sfx");
-  s.textContent = ok ? cur.ok : cur.bad;
+  s.textContent = cur.ok;
   s.classList.remove("show");
   void s.offsetWidth;
   s.classList.add("show");
@@ -1842,37 +1893,31 @@ function flash(ok, move) {
     s.style.setProperty("--sfx-y", `${pt.y * 100}%`);
   }
 
-  if (ok) {
-    const arm = $(cur.armId);
-    if (arm) arm.classList.add("hit");
-    $("demoCard").classList.add("ok-flash");
-    $("sil").classList.add("strike");
-    const ring = $("impact");
-    if (ring && pt) {
-      ring.style.left = `${pt.x * 100}%`;
-      ring.style.top = `${pt.y * 100}%`;
-      ring.classList.remove("fire");
-      ring.classList.toggle("cool", cur.sil === "bong");
-      void ring.offsetWidth;
-      ring.classList.add("fire");
-    }
-    const stage = document.querySelector(".stage");
-    if (stage) {
-      stage.classList.remove("shake");
-      void stage.offsetWidth;
-      stage.classList.add("shake");
-    }
+  const arm = $(cur.armId);
+  if (arm) arm.classList.add("hit");
+  const ring = $("impact");
+  if (ring && pt) {
+    ring.style.left = `${pt.x * 100}%`;
+    ring.style.top = `${pt.y * 100}%`;
+    ring.classList.remove("fire");
+    ring.classList.toggle("cool", cur.sil === "bong");
+    void ring.offsetWidth;
+    ring.classList.add("fire");
+  }
+  const stage = document.querySelector(".stage");
+  if (stage) {
+    stage.classList.remove("shake");
+    void stage.offsetWidth;
+    stage.classList.add("shake");
   }
 
   setTimeout(() => {
     $("flash").className = "flash";
     $("armRU").classList.remove("hit");
     $("armMid").classList.remove("hit");
-    $("sil").classList.remove("strike");
-    $("demoCard").classList.remove("ok-flash");
-    const stage = document.querySelector(".stage");
-    if (stage) stage.classList.remove("shake");
-  }, ok ? 220 : (cur.sil === "bong" ? 140 : 90));
+    const el = document.querySelector(".stage");
+    if (el) el.classList.remove("shake");
+  }, 220);
 }
 
 // 待触发的视觉反馈：判定即时，画面等手到达靶区
@@ -1880,60 +1925,52 @@ const CONTACT_PUSH = 0.97; // 与 laneHand 的吸附阈值一致：触发瞬间�
 const CONTACT_FALLBACK_MS = 260;
 let pendingImpact = null;
 
-function armPushOf(move) {
-  return handViewState.pushOf(move && move.side);
+function armPushOf(side) {
+  return handViewState.pushOf(side);
 }
 
-function armReached(move) {
-  if (!move) return true;
+function armReached(side) {
+  if (!side) return true;
   const host = $("handOverlay");
   // need_both 阶段不画手，没人会到达：直接走兜底
   if (host && host.dataset.hands === "need_both") return false;
-  return armPushOf(move) >= CONTACT_PUSH;
+  return armPushOf(side) >= CONTACT_PUSH;
 }
 
 function flushPendingImpact(now) {
   if (!pendingImpact) return;
-  const reached = armReached(pendingImpact.move);
+  const reached = armReached(pendingImpact.side);
   if (reached || now - pendingImpact.t0 >= CONTACT_FALLBACK_MS) {
-    const { move, kind } = pendingImpact;
+    const { move } = pendingImpact;
     pendingImpact = null;
-    flash(kind === "ok", move);
+    flash(move);
   }
 }
 
-function onHitValid() {
+function onHitValid(shape, side) {
   const now = performance.now();
   if (now - lastHitAt < POST_HIT_COOLDOWN) return;
+  const move = moveOfShape(shape);
+  if (!move) return;
   lastHitAt = now;
-  holdShape = null;
+  holdKey = null;
   holdCount = 0;
   holdAccum = 0;
   holdLastTs = 0;
   // 判定和推进即时执行；画面反馈挂起，等这只手落到靶区
-  const hitMove = required();
-  pendingImpact = { move: hitMove, kind: "ok", t0: now };
+  hits.push({ move: MOVE_ID_OF_SHAPE[shape], side });
+  armLock[side] = shape;
+  pendingImpact = { move, side, t0: now };
   handViewState.onHitOk();
-  step += 1;
   setCountDetail("识别：ok");
-  if (step >= 10) {
+  applyHitVisual();
+  if (hits.length >= HIT_GOAL) {
     finish(true);
     return;
   }
-  applyStepVisual();
-  if (armReached(hitMove)) flushPendingImpact(now);
-  showBanner("冷却中 · 2 秒后可下一击", 1200);
+  if (armReached(side)) flushPendingImpact(now);
+  showBanner("冷却中 · 0.5 秒后可下一击", 1200);
 }
-
-function onHitWrong(msg) {
-  const now = performance.now();
-  if (now - lastWrongAt < WRONG_COOLDOWN) return;
-  lastWrongAt = now;
-  pendingImpact = null; // 错击即时灰闪，不等接触
-  flash(false, required());
-  showBanner(msg || ("须出" + required().name), 800);
-}
-
 
 function setHoldUI(on, sil, sec, pct) {
   const track = $("holdTrack");
@@ -1954,8 +1991,15 @@ function setHoldUI(on, sil, sec, pct) {
   if (meta) {
     meta.classList.add("show");
     const name = sil === "bong" ? "膀态维持中" : "冲态维持中";
-    meta.textContent = name + " " + sec.toFixed(1) + "/3s · " + Math.round(pct) + "%";
+    meta.textContent = name + " " + sec.toFixed(1) + "/1s · " + Math.round(pct) + "%";
   }
+}
+
+function resetHold() {
+  holdKey = null;
+  holdCount = 0;
+  holdAccum = 0;
+  holdLastTs = 0;
 }
 
 function applyCandidate(c) {
@@ -1966,10 +2010,7 @@ function applyCandidate(c) {
 
   if (c.quality === "lost") {
     lostStreak += 1;
-    holdShape = null;
-    holdCount = 0;
-    holdAccum = 0;
-    holdLastTs = 0;
+    resetHold();
     if (lostStreak >= LOST_FRAMES) {
       setPaused(true);
       setCamStatus("回到框内");
@@ -1981,60 +2022,45 @@ function applyCandidate(c) {
   lostStreak = 0;
   if (posePaused) setPaused(false);
 
-  if (step >= 10) {
+  if (hits.length >= HIT_GOAL) {
     if (captureTipAudience(label) !== "debug" || debugMode) setCamStatus(label);
     return;
   }
 
-  const need = required();
   const coolLeft = lastHitAt ? POST_HIT_COOLDOWN - (now - lastHitAt) : 0;
   if (coolLeft > 0) {
-    setCamStatus("冷却中 " + Math.ceil(coolLeft / 1000) + "s");
-    holdAccum = 0;
-    holdLastTs = 0;
-    holdShape = null;
-    holdCount = 0;
+    setCamStatus("冷却中 " + (coolLeft / 1000).toFixed(1) + "s");
+    resetHold();
     setHoldUI(false);
     return;
   }
 
   if (c.shape === "unknown") {
     if (holdAccum > 0) showBanner("保持姿势", 800);
-    holdAccum = 0;
-    holdLastTs = 0;
-    holdShape = null;
-    holdCount = 0;
+    resetHold();
     setHoldUI(false);
     setCamStatus(label);
     return;
   }
 
-  if (c.shape !== need.shape) {
-    if (holdAccum > 0) showBanner("保持姿势", 800);
-    holdShape = null;
-    holdCount = 0;
-    holdAccum = 0;
-    holdLastTs = 0;
-    setHoldUI(false);
-    onHitWrong("须出" + need.name);
-    setCamStatus(label);
-    return;
-  }
+  const move = moveOfShape(c.shape);
+  const key = c.side + c.shape;
+  const sameKey = holdKey === key;
 
-  // 路径 B：ok 或 near 均可蓄 3s 维持
+  // 路径 B：ok 或 near 均可蓄 1s 维持
   if (c.quality === "ok" || c.quality === "near") {
-    if (holdShape === c.shape && holdLastTs) holdAccum += now - holdLastTs;
-    else { holdShape = c.shape; holdAccum = 0; }
+    holdAccum = sameKey && holdLastTs ? holdAccum + (now - holdLastTs) : 0;
+    holdKey = key;
     holdLastTs = now;
     const sec = Math.min(HOLD_PASS_MS / 1000, holdAccum / 1000);
     const pct = Math.floor((holdAccum / HOLD_PASS_MS) * 100);
-    const tag = need.sil === "punch" ? "冲态维持中" : "膀态维持中";
-    setHoldUI(true, need.sil, sec, pct);
-    setCamStatus(tag + " " + sec.toFixed(1) + "/3s · " + pct + "%");
+    const tag = move.sil === "punch" ? "冲态维持中" : "膀态维持中";
+    setHoldUI(true, move.sil, sec, pct);
+    setCamStatus(tag + " " + sec.toFixed(1) + "/1s · " + pct + "%");
     setCountDetail(tag + " " + pct + "%");
     if (holdAccum >= HOLD_PASS_MS) {
       setHoldUI(false);
-      onHitValid();
+      onHitValid(c.shape, c.side);
       return;
     }
   } else {
@@ -2042,13 +2068,12 @@ function applyCandidate(c) {
     holdLastTs = 0;
   }
 
-  // 路径 A：瞬时 ok + 短去抖（原判定）
+  // 路径 A：瞬时 ok + 短去抖
   if (c.quality === "ok") {
-    if (holdShape === c.shape) holdCount += 1;
-    else { holdCount = 1; }
+    holdCount = sameKey ? holdCount + 1 : 1;
     if (holdCount >= HOLD_FRAMES) {
       setHoldUI(false);
-      onHitValid();
+      onHitValid(c.shape, c.side);
       return;
     }
   }
@@ -2072,8 +2097,8 @@ function predictLoop() {
         handPackets = detectHandPackets(video, syncTs);
         if (findBothHands(handPackets)) beginRound();
       }
-      const move = roundPhase === ROUND_PHASE.ACTIVE && step < SEQ.length ? required() : null;
-      const candidate = lm ? classifyPose(lm, move) : lostCandidate("无人");
+      const active = roundPhase === ROUND_PHASE.ACTIVE && hits.length < HIT_GOAL;
+      const candidate = lm ? classifyPose(lm, active) : lostCandidate("无人");
       if (roundPhase === ROUND_PHASE.ACTIVE) {
         handViewState.setPoseDrive(candidate.side, candidate.shape, candidate.quality);
         applyCandidate(candidate);
@@ -2087,9 +2112,11 @@ function predictLoop() {
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (lm && candidate.side) {
-        const arm = armOf(lm, candidate.side);
-        if (armVisible(arm)) {
+      // 摄像头小窗按两臂画关节点，自由击桩两只手都可能出招
+      if (lm) {
+        for (const side of ["L", "R"]) {
+          const arm = armOf(lm, side);
+          if (!armVisible(arm)) continue;
           ctx.fillStyle = "rgba(232,215,195,0.85)";
           for (const p of [arm.sh, arm.el, arm.wr]) {
             ctx.beginPath();
@@ -2131,8 +2158,8 @@ function beginRound() {
   if (roundPhase === ROUND_PHASE.ACTIVE) return;
   setRoundPhase(ROUND_PHASE.ACTIVE);
   if (roundPhase !== ROUND_PHASE.ACTIVE) return;
-  $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。";
-  applyStepVisual();
+  $("instr").textContent = "自由击桩 · 左右手可打任意桩手。1 分钟内有效击满 10 次；维持 1 秒或瞬时有效均可过；击后冷却 0.5 秒。";
+  applyHitVisual();
 }
 
 async function start() {
@@ -2190,38 +2217,39 @@ function finish(pass) {
   setRoundPhase(ROUND_PHASE.FINISHED);
   setPaused(false);
   $("hud").classList.remove("urgent");
-  $("armRU").classList.remove("target-punch", "target-bong");
-  $("armMid").classList.remove("target-punch", "target-bong");
+  $("armRU").className = "arm ru";
+  $("armMid").className = "arm mid";
   const contest = mode === "contest";
   $("resultTitle").textContent = pass
     ? (contest ? "咏春比赛专用 · 达成" : "过关。下一课。")
     : (contest ? "咏春比赛专用 · 未达成" : "再来一课。");
+  const seqText = hits.length
+    ? hits.map((hit) => MOVES[hit.move].short).join("、")
+    : "—";
   $("resultBody").textContent =
-    `完成 ${step}/10 · 剩余 ${Math.ceil(left)}s · 谱：` +
-    SEQ.map((id) => MOVES[id].short).join("-");
+    `完成 ${hits.length}/${HIT_GOAL} · 剩余 ${Math.ceil(left)}s · 序列：${seqText}`;
   $("overlay").classList.add("show");
 }
 
-function pulseMoveSide(shape) {
-  const side = shape === "straight" ? "L" : shape === "bridge" ? "R" : null;
-  if (side) handViewState.pulse(side);
+/** 触控与 F／J 的脉冲：左手冲、右手膀 */
+function pulseSide(side, shape) {
+  if (side) handViewState.pulse(side, shape);
 }
 
-function tryKeyDrive(shape) {
-  if (mode === "contest" || step >= 10) return;
+function tryKeyDrive(shape, side) {
+  if (mode === "contest" || hits.length >= HIT_GOAL) return;
   if ($("overlay").classList.contains("show")) return;
-  pulseMoveSide(shape);
+  pulseSide(side, shape);
   if (roundPhase !== ROUND_PHASE.ACTIVE) beginRound();
-  const need = required();
-  if (shape === need.shape) onHitValid();
-  else onHitWrong("须出" + need.name);
+  onHitValid(shape, side);
 }
 
 function tryTapFallback() {
-  if (mode === "contest" || step >= 10) return;
+  if (mode === "contest" || hits.length >= HIT_GOAL) return;
   if (roundPhase !== ROUND_PHASE.ACTIVE) beginRound();
-  pulseMoveSide(required().shape);
-  onHitValid();
+  const tap = nextTapMove();
+  pulseSide(tap.side, MOVES[tap.move].shape);
+  onHitValid(MOVES[tap.move].shape, tap.side);
 }
 
 $("btnMode").onclick = () => {
@@ -2247,10 +2275,10 @@ window.addEventListener("keydown", (e) => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (k === "f") {
     e.preventDefault();
-    tryKeyDrive("straight");
+    tryKeyDrive("straight", "L");
   } else if (k === "j") {
     e.preventDefault();
-    tryKeyDrive("bridge");
+    tryKeyDrive("bridge", "R");
   } else if (k === "d") {
     e.preventDefault();
     setDebugMode(!debugMode);
