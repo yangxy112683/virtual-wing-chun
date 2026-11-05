@@ -17,7 +17,6 @@
   :root {
     --card: rgba(12, 10, 8, 0.82);
     --red: #c43c2e; --ok: #e8d7c3; --glow: #e85a2a; --glow2: #3aa0c8;
-    --rail: 28vmin;
     --dummy-w: 46%;
     --dummy-h: 76%;
   }
@@ -35,7 +34,7 @@
       radial-gradient(ellipse at 50% 35%, #5a4030 0%, transparent 55%),
       linear-gradient(180deg, #2a1c14 0%, #12100e 55%, #0a0908 100%);
   }
-  .stage-col, .rail, .arm-side { display: contents; }
+  .stage-col, .rail, .arm-side, .side-left { display: contents; }
   .cam-wrap {
     position: absolute; left: 10px; top: 156px; width: 104px; height: 128px;
     z-index: 6; border-radius: 10px; overflow: hidden;
@@ -284,8 +283,6 @@
   .card h2 { font-size: 20px; margin-bottom: 8px; }
   .card p { font-size: 13px; color: rgba(232,215,195,0.75); line-height: 1.5; margin-bottom: 16px; }
   .card button { width: 100%; border: 0; border-radius: 10px; padding: 12px; background: var(--red); color: #fff; font-weight: 600; margin-top: 8px; }
-  .card .ghost-btn { background: rgba(255,255,255,0.1); }
-
   .hold-track {
     margin-top: 6px; height: 8px; border-radius: 99px;
     background: rgba(255,255,255,0.1); overflow: hidden;
@@ -341,78 +338,125 @@
   .hand-tag.need { color: #ffb089; }
   .hand-tag.lost { color: rgba(232,215,195,0.78); }
 
-  @media (orientation: landscape) and (min-height: 640px) {
+  @media (orientation: landscape) and (min-width: 1000px) {
+    html, body { height: 100%; overflow: hidden; }
     .phone {
-      max-width: none; width: 100%; margin: 0; height: 100dvh; min-height: 100dvh;
+      max-width: none; width: 100%; margin: 0;
+      height: 100dvh; min-height: 0; overflow: hidden;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) var(--rail);
+      grid-template-columns: clamp(180px, 20vw, 340px) minmax(0, 1fr) clamp(220px, 22vw, 360px);
       grid-template-rows: minmax(0, 1fr);
+      grid-template-areas: "side stage rail";
+      --pole-x: 50%;
       background:
-        radial-gradient(ellipse at 42% 48%, #5a4030 0%, transparent 52%),
+        radial-gradient(ellipse at 50% 42%, #5a4030 0%, transparent 48%),
         linear-gradient(180deg, #2a1c14 0%, #12100e 55%, #0a0908 100%);
     }
+    .side-left {
+      grid-area: side;
+      display: flex; flex-direction: column;
+      gap: clamp(8px, 1.4vh, 16px);
+      min-width: 0; min-height: 0; height: 100%;
+      padding: clamp(8px, 1.2vh, 14px);
+      padding-left: max(8px, env(safe-area-inset-left));
+      overflow: hidden; z-index: 8;
+      background: rgba(8, 6, 5, 0.55);
+      border-right: 1px solid rgba(232, 215, 195, 0.14);
+    }
     .stage-col {
+      grid-area: stage;
       display: block; position: relative; min-width: 0; min-height: 0; height: 100%;
       overflow: hidden;
     }
     .rail {
-      display: flex; flex-direction: column; gap: 6px;
-      min-width: 0; height: 100%; position: relative;
-      padding: 8px;
+      grid-area: rail;
+      display: flex; flex-direction: column;
+      gap: clamp(6px, 1vh, 12px);
+      min-width: 0; min-height: 0; height: 100%; position: relative;
+      padding: clamp(8px, 1.2vh, 14px);
       padding-right: max(8px, env(safe-area-inset-right));
       padding-bottom: max(8px, env(safe-area-inset-bottom));
-      overflow: auto; z-index: 8;
+      overflow: hidden; z-index: 8;
       background: rgba(8, 6, 5, 0.55);
       border-left: 1px solid rgba(232, 215, 195, 0.14);
     }
-    .overlay { grid-column: 1 / -1; grid-row: 1; }
+    .overlay { grid-area: 1 / 1 / -1 / -1; }
     .cam-wrap {
-      left: max(10px, env(safe-area-inset-left));
-      top: auto;
-      bottom: max(10px, env(safe-area-inset-bottom));
-      width: min(132px, 22%); height: min(96px, 24%);
+      position: relative; left: auto; top: auto; right: auto; bottom: auto;
+      width: 100%; height: auto; aspect-ratio: 4 / 3;
+      flex: 0 0 auto; z-index: 1;
     }
-    .topbar { position: static; left: auto; right: auto; top: auto; letter-spacing: 0.14em; }
+    .cam-status { font-size: clamp(10px, 1.3vh, 13px); }
+    .topbar {
+      position: static; left: auto; right: auto; top: auto;
+      letter-spacing: 0.12em; font-size: clamp(11px, 1.4vh, 14px);
+    }
     .hud {
       position: static; top: auto; right: auto; left: auto; z-index: auto;
-      padding: 8px;
-      grid-template-columns: 40px minmax(0, 1fr);
-      gap: 4px 6px; align-items: center;
+      padding: clamp(8px, 1.1vh, 14px);
+      grid-template-columns: clamp(40px, 8vh, 72px) minmax(0, 1fr);
+      gap: clamp(4px, 0.7vh, 8px); align-items: center;
+      flex: 0 1 auto; min-height: 0;
     }
     .hud-main { display: contents; }
-    .timer-wrap { width: 44px; height: 44px; grid-column: 1; grid-row: 2; }
-    .timer-wrap svg { width: 44px; height: 44px; }
-    .step-tag { grid-column: 1 / -1; grid-row: 1; font-size: 15px; line-height: 1.25; }
-    .count { grid-column: 2; grid-row: 2; }
-    .instr { grid-column: 1 / -1; grid-row: 3; }
+    .timer-wrap {
+      width: clamp(40px, 8vh, 72px); height: clamp(40px, 8vh, 72px);
+      grid-column: 1; grid-row: 2;
+    }
+    .timer-wrap svg { width: 100%; height: 100%; }
+    .timer-wrap .t { font-size: clamp(13px, 2vh, 20px); }
+    .step-tag { grid-column: 1 / -1; grid-row: 1; font-size: clamp(14px, 2.4vh, 26px); line-height: 1.25; }
+    .count { grid-column: 2; grid-row: 2; font-size: clamp(12px, 1.7vh, 18px); margin-top: 0; }
+    .instr { grid-column: 1 / -1; grid-row: 3; font-size: clamp(11px, 1.7vh, 16px); line-height: 1.35; }
     .hold-track { grid-column: 1 / -1; grid-row: 4; }
     .hold-meta { grid-column: 1 / -1; grid-row: 5; }
-    .seq { grid-column: 1 / -1; grid-row: 6; }
-    .seq span { width: 16px; height: 16px; border-radius: 4px; }
+    .seq { grid-column: 1 / -1; grid-row: 6; margin-top: clamp(4px, 0.6vh, 8px); }
+    .seq span {
+      width: clamp(16px, 2.6vh, 28px); height: clamp(16px, 2.6vh, 28px);
+      border-radius: 4px; font-size: clamp(9px, 1.4vh, 13px);
+    }
     .dummy {
-      left: calc(58% - var(--dummy-w) / 2);
+      left: calc(var(--pole-x) - var(--dummy-w) / 2);
       top: calc(50% - var(--dummy-h) / 2);
       width: var(--dummy-w); height: var(--dummy-h);
       transform: none; z-index: 4;
     }
     .arm-side {
       display: block; position: absolute; z-index: 6; overflow: visible; pointer-events: none;
-      left: calc(58% - var(--dummy-w) / 2);
+      left: calc(var(--pole-x) - var(--dummy-w) / 2);
       top: calc(50% - var(--dummy-h) / 2);
       width: var(--dummy-w); height: var(--dummy-h);
     }
-    .pole { width: 9%; margin-left: 0; transform: translateX(-50%); }
-    .arm.lu, .arm.ru { width: 32%; height: 5.6%; }
-    .arm.ru { left: 50%; }
-    .arm.mid { width: 32%; height: 6.2%; }
-    .leg { width: 5%; height: 22%; }
+    .pole { width: 9%; margin-left: 0; transform: translateX(-50%); z-index: 3; }
+    .arm.lu {
+      left: auto; right: 50%; width: 32%; height: 5.6%;
+      transform-origin: right center;
+    }
+    .arm.ru {
+      left: 50%; width: 32%; height: 5.6%;
+      transform-origin: left center;
+    }
+    .arm.mid {
+      left: 50%; width: 32%; height: 6.2%;
+      transform-origin: left center;
+    }
+    .leg {
+      left: 50%; width: 5%; height: 22%;
+      transform: rotate(-18deg);
+      transform-origin: top left;
+    }
     .arm.target-punch, .arm.target-bong { outline-width: 4px; }
     .demo-card {
-      position: static; right: auto; bottom: auto; flex: 0 1 auto;
+      position: relative; left: auto; right: auto; top: auto; bottom: auto;
+      flex: 1 1 auto; min-height: 0;
       width: 100%; max-width: none; z-index: auto; box-shadow: none;
-      padding: 6px 8px 7px;
+      display: flex; flex-direction: column; overflow: hidden;
+      padding: clamp(6px, 1vh, 12px);
     }
-    .sil { height: 72px; }
+    .demo-label { font-size: clamp(10px, 1.4vh, 14px); }
+    .demo-cmd { font-size: clamp(13px, 1.9vh, 20px); }
+    .demo-hint { font-size: clamp(10px, 1.5vh, 15px); }
+    .sil { flex: 1 1 auto; height: auto; min-height: 0; margin: 0; }
     .sfx {
       left: 0; top: 22%; transform: translate(-108%, -50%);
       font-size: clamp(18px, 3vmin, 28px); z-index: 2;
@@ -421,39 +465,38 @@
     .flash { z-index: 5; }
     .banner {
       top: 8px; transform: translateX(-50%);
-      max-width: calc(100% - 24px); z-index: 7;
+      max-width: min(52%, calc(100% - 24px)); z-index: 7;
+      font-size: clamp(13px, 2vh, 18px);
     }
-    .bottom-chrome { position: static; left: auto; right: auto; bottom: auto; z-index: auto; }
+    .note { font-size: clamp(11px, 1.5vh, 15px); }
+    .bottom-chrome {
+      position: static; left: auto; right: auto; bottom: auto;
+      margin-top: auto; z-index: auto;
+      gap: clamp(6px, 0.8vh, 10px);
+    }
     .dock-tools { grid-template-columns: 1fr; }
-    .dock-main { grid-template-columns: 1fr; gap: 6px; }
-    .bottom-chrome button { padding: 8px 6px; }
-    .dock-tools button { padding: 7px 4px; }
-    .hand-overlay { height: 33.34vw; bottom: 0; }
+    .dock-main { grid-template-columns: 1fr; gap: clamp(6px, 0.8vh, 10px); }
+    .bottom-chrome button {
+      padding: clamp(8px, 1.35vh, 16px) 8px;
+      font-size: clamp(12px, 1.7vh, 17px);
+    }
+    .dock-tools button { padding: clamp(7px, 1.15vh, 13px) 6px; }
+    .hand-overlay {
+      top: 0; right: 0; bottom: 0; left: 0;
+      width: auto; height: auto; z-index: 1;
+    }
     .hand-tag, .hand-tag.need, .hand-tag.lost {
-      position: fixed;
-      left: max(12px, env(safe-area-inset-left));
+      position: absolute;
+      left: 12px;
       right: auto;
-      top: 10px;
+      top: 8px;
       bottom: auto;
       width: max-content;
-      max-width: 240px;
+      max-width: 42%;
       text-align: left;
-      font-size: 16px;
+      font-size: clamp(13px, 2vh, 18px);
       z-index: 7;
     }
-    .hand-tag.cun {
-      position: absolute;
-      left: 91%;
-      top: 15%;
-      bottom: auto;
-      width: max-content;
-      max-width: none;
-      font-size: 20px;
-      white-space: nowrap;
-      z-index: 2;
-      color: #ffd78a;
-    }
-    .stage:has(.arm.target-bong) .hand-tag.cun { top: 37%; left: 85%; }
   }
   @keyframes popWide {
     0% { opacity: 0; transform: translate(-108%, -28%) scale(0.85); }
@@ -464,53 +507,13 @@
 </head>
 <body>
 <div class="phone">
-  <div class="stage-col">
+  <aside class="side-left">
     <div class="cam-wrap" id="camWrap">
       <video id="video" playsinline webkit-playsinline muted autoplay></video>
       <canvas id="overlayCanvas"></canvas>
       <div class="cam-status" id="camStatus">摄像头未开</div>
     </div>
 
-    <div class="stage">
-      <div class="hand-overlay" id="handOverlay">
-        <canvas id="handCanvas" aria-hidden="true"></canvas>
-      </div>
-      <div class="dummy">
-        <div class="pole"></div>
-        <div class="arm lu" id="armLU"></div>
-        <div class="arm ru" id="armRU"></div>
-        <div class="arm mid" id="armMid"></div>
-        <div class="leg"></div>
-      </div>
-      <div class="arm-side">
-        <div class="hand-tag" id="handTag" hidden role="status"></div>
-        <div class="sfx" id="sfx"></div>
-      </div>
-      <div class="flash" id="flash"></div>
-      <div class="banner" id="banner"></div>
-    </div>
-  </div>
-
-  <aside class="rail">
-    <div class="topbar" id="topbar"></div>
-    <div class="hud" id="hud">
-      <div class="timer-wrap">
-        <svg width="44" height="44" viewBox="0 0 64 64">
-          <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="4"/>
-          <circle id="ring" cx="32" cy="32" r="28" fill="none" stroke="#c43c2e" stroke-width="4"
-            stroke-dasharray="175.93" stroke-dashoffset="0" stroke-linecap="round"/>
-        </svg>
-        <div class="t" id="timerText">10.0</div>
-      </div>
-      <div class="hud-main">
-        <div class="step-tag punch" id="stepTag">第 1/10 击 · 日字冲拳（右上）</div>
-        <div class="instr" id="instr">交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。</div>
-        <div class="count" id="count">0 / 10 · 识别：—</div>
-        <div class="hold-track" id="holdTrack"><div class="hold-bar punch" id="holdBar"></div></div>
-        <div class="hold-meta" id="holdMeta"></div>
-        <div class="seq" id="seq"></div>
-      </div>
-    </div>
     <div class="demo-card" id="demoCard" aria-label="成功示范">
       <div class="demo-label">成功示范</div>
       <div class="demo-cmd" id="demoCmd">斜上冲出</div>
@@ -542,8 +545,51 @@
       </div>
       <div class="demo-hint" id="demoHint">斜向上出拳即过 · 右上</div>
     </div>
+  </aside>
+
+  <div class="stage-col">
+    <div class="stage">
+      <div class="hand-overlay" id="handOverlay">
+        <canvas id="handCanvas" aria-hidden="true"></canvas>
+      </div>
+      <div class="dummy">
+        <div class="pole"></div>
+        <div class="arm lu" id="armLU"></div>
+        <div class="arm ru" id="armRU"></div>
+        <div class="arm mid" id="armMid"></div>
+        <div class="leg"></div>
+      </div>
+      <div class="arm-side">
+        <div class="sfx" id="sfx"></div>
+      </div>
+      <div class="hand-tag" id="handTag" hidden role="status"></div>
+      <div class="flash" id="flash"></div>
+      <div class="banner" id="banner"></div>
+    </div>
+  </div>
+
+  <aside class="rail">
+    <div class="topbar" id="topbar"></div>
+    <div class="hud" id="hud">
+      <div class="timer-wrap">
+        <svg width="44" height="44" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="4"/>
+          <circle id="ring" cx="32" cy="32" r="28" fill="none" stroke="#c43c2e" stroke-width="4"
+            stroke-dasharray="175.93" stroke-dashoffset="0" stroke-linecap="round"/>
+        </svg>
+        <div class="t" id="timerText">10.0</div>
+      </div>
+      <div class="hud-main">
+        <div class="step-tag punch" id="stepTag">第 1/10 击 · 日字冲拳（右上）</div>
+        <div class="instr" id="instr">交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。</div>
+        <div class="count" id="count">0 / 10 · 识别：—</div>
+        <div class="hold-track" id="holdTrack"><div class="hold-bar punch" id="holdBar"></div></div>
+        <div class="hold-meta" id="holdMeta"></div>
+        <div class="seq" id="seq"></div>
+      </div>
+    </div>
     <div class="bottom-chrome">
-      <p class="note" id="note">先点「开启摄像头」申请权限（须 HTTPS／localhost）；对准上半身按谱出冲或膀</p>
+      <p class="note" id="note">日课可直接开始（F=左手冲／J=右手膀）；开摄像头后须双手入镜</p>
       <div class="dock-tools">
         <button class="ghost" id="btnMode" type="button">日课</button>
         <button class="ghost" id="btnCamDock" type="button">开启摄像头</button>
@@ -561,7 +607,6 @@
       <h2 id="resultTitle">过关。下一课。</h2>
       <p id="resultBody"></p>
       <button type="button" id="btnAgain">再来一课</button>
-      <button type="button" class="ghost-btn" id="btnCam">开启摄像头</button>
     </div>
   </div>
 </div>
@@ -605,12 +650,12 @@ const MOVES = {
   yat_ji_chung_kuen: {
     name: "日字冲拳", short: "冲", shape: "straight", partLabel: "右上",
     armId: "armRU", ok: "笃", bad: "嗒", sil: "punch", targetClass: "target-punch",
-    cmd: "斜上冲出", demo: "斜向上出拳即过 · 右上",
+    cmd: "左手斜上冲出", demo: "左手斜上冲出即过 · 右上", side: "L",
   },
   bong_sau: {
     name: "膀手", short: "膀", shape: "bridge", partLabel: "中桩",
     armId: "armMid", ok: "沙—笃", bad: "嗒", sil: "bong", targetClass: "target-bong",
-    cmd: "斜下成式", demo: "斜向下出拳即过 · 中桩",
+    cmd: "右手斜下成式", demo: "右手斜下成式即过 · 中桩", side: "R",
   },
 };
 
@@ -659,22 +704,15 @@ function angleDeg(a, b, c) {
   return Math.acos(Math.min(1, Math.max(-1, dot / m))) * 180 / Math.PI;
 }
 
-function pickArm(lm) {
-  // Prefer the more extended / higher-visibility arm (selfie: often right = index 12,14,16)
-  const arms = [
-    { sh: lm[12], el: lm[14], wr: lm[16], side: "R" },
-    { sh: lm[11], el: lm[13], wr: lm[15], side: "L" },
-  ];
-  let best = null, bestScore = -1;
-  for (const a of arms) {
-    if (!a.sh || !a.el || !a.wr) continue;
-    const vis = Math.min(a.sh.visibility ?? 1, a.el.visibility ?? 1, a.wr.visibility ?? 1);
-    if (vis < 0.4) continue;
-    const reach = Math.hypot(a.wr.x - a.sh.x, a.wr.y - a.sh.y);
-    const score = vis * 2 + reach;
-    if (score > bestScore) { bestScore = score; best = a; }
-  }
-  return best;
+function armOf(lm, side) {
+  if (side === "L") return { sh: lm[11], el: lm[13], wr: lm[15], side: "L" };
+  return { sh: lm[12], el: lm[14], wr: lm[16], side: "R" };
+}
+
+function armVisible(arm) {
+  if (!arm || !arm.sh || !arm.el || !arm.wr) return false;
+  const vis = Math.min(arm.sh.visibility ?? 1, arm.el.visibility ?? 1, arm.wr.visibility ?? 1);
+  return vis >= 0.4;
 }
 
 function inFrame(lm, arm) {
@@ -686,33 +724,20 @@ function inFrame(lm, arm) {
   return coreOk && softOk;
 }
 
-/** Owner 放宽：冲＝斜向上出拳；膀＝斜向下出拳（画面 y 向下） */
-function classifyPose(lm) {
-  const arm = pickArm(lm);
-  if (!arm) return { shape: "unknown", quality: "lost", confidence: 0, detail: "无人" };
-
-  if (!inFrame(lm, arm)) {
-    return { shape: "unknown", quality: "lost", confidence: 0, detail: "出画" };
-  }
-
+/** 单臂 up／down 分；冲看 up，膀看 down（画面 y 向下） */
+function armScores(arm) {
   const { sh, el, wr } = arm;
   const reach = Math.hypot(wr.x - sh.x, wr.y - sh.y);
   const foreshort = Math.abs((wr.z ?? 0) - (sh.z ?? 0));
-  // 腕相对肩的竖直方向：<0 斜上，>0 斜下
   const dy = wr.y - sh.y;
   const dx = Math.abs(wr.x - sh.x);
-  // 肘相对肩也可辅助：冲时常腕高于肘；膀时常腕低于肘
   const wristAboveElbow = wr.y < el.y - 0.01;
   const wristBelowElbow = wr.y > el.y + 0.01;
-
-  // 未明显出拳（臂收在身侧）
   const MIN_REACH = 0.10;
   const MIN_EXT = Math.max(reach, foreshort * 1.2);
   if (MIN_EXT < MIN_REACH && dx < 0.06) {
-    return { shape: "unknown", quality: "near", confidence: 0.15, detail: "未出招" };
+    return { upScore: -1, downScore: -1, dy, reach, foreshort, weak: "未出招" };
   }
-
-  // 冲：斜向上出拳（腕高于肩，或腕明显高于肘且前伸）
   let upScore = -1;
   if (dy < -0.02 || (wristAboveElbow && dy < 0.04)) {
     upScore =
@@ -721,8 +746,6 @@ function classifyPose(lm) {
       Math.min(0.35, foreshort * 2.5) +
       (wristAboveElbow ? 0.25 : 0);
   }
-
-  // 膀：斜向下出拳（腕低于肩，或腕明显低于肘的前伸／斜落）
   let downScore = -1;
   if (dy > 0.02 || (wristBelowElbow && dy > -0.04)) {
     downScore =
@@ -731,35 +754,82 @@ function classifyPose(lm) {
       Math.min(0.35, foreshort * 2.5) +
       (wristBelowElbow ? 0.25 : 0);
   }
+  return { upScore, downScore, dy, reach, foreshort, weak: null };
+}
 
-  if (upScore < 0.2 && downScore < 0.2) {
-    return { shape: "unknown", quality: "near", confidence: 0.2, detail: "方向不明" };
+function scoreToCandidate(shape, side, score, dy) {
+  const conf = Math.min(0.98, 0.52 + score * 0.22);
+  return {
+    shape,
+    side,
+    quality: conf >= 0.58 ? "ok" : "near",
+    confidence: conf,
+    detail: (shape === "straight" ? "冲↑" : "膀↓") + ` dy=${dy.toFixed(2)}`,
+  };
+}
+
+function classifyArm(lm, arm, spec) {
+  if (!inFrame(lm, arm)) return { detail: spec.label + "出画" };
+  const s = armScores(arm);
+  if (s.weak) return { detail: s.weak };
+  if (s.upScore < 0.2 && s.downScore < 0.2) return { detail: spec.label + "方向不明" };
+  if (s.upScore > 0 && s.downScore > 0 && Math.abs(s.upScore - s.downScore) < 0.12) {
+    return { detail: spec.label + "上下接近" };
+  }
+  const primary = spec.score === "up" ? s.upScore : s.downScore;
+  const other = spec.score === "up" ? s.downScore : s.upScore;
+  const wins = spec.score === "up" ? primary >= other : primary > other;
+  if (wins && primary >= 0.28) {
+    return { candidate: scoreToCandidate(spec.shape, spec.side, primary, s.dy) };
+  }
+  return { detail: spec.label + "弱特征" };
+}
+
+/** 左臂只判冲，右臂只判膀；带 side 供手模与小窗 */
+function classifyPose(lm) {
+  const left = armOf(lm, "L");
+  const right = armOf(lm, "R");
+  const leftOk = armVisible(left);
+  const rightOk = armVisible(right);
+  if (!leftOk && !rightOk) {
+    return { shape: "unknown", quality: "lost", confidence: 0, detail: "无人", side: null };
   }
 
-  // 互斥接近：略偏一侧即可，阈值放宽
-  if (upScore > 0 && downScore > 0 && Math.abs(upScore - downScore) < 0.12) {
-    return { shape: "unknown", quality: "near", confidence: 0.3, detail: "上下接近" };
+  let straight = null;
+  let bridge = null;
+  let nearDetail = null;
+  if (leftOk) {
+    const found = classifyArm(lm, left, { side: "L", shape: "straight", score: "up", label: "左臂" });
+    straight = found.candidate || null;
+    nearDetail = nearDetail || found.detail || null;
+  }
+  if (rightOk) {
+    const found = classifyArm(lm, right, { side: "R", shape: "bridge", score: "down", label: "右臂" });
+    bridge = found.candidate || null;
+    nearDetail = nearDetail || found.detail || null;
   }
 
-  if (upScore >= downScore && upScore >= 0.28) {
-    const conf = Math.min(0.98, 0.52 + upScore * 0.22);
-    return {
-      shape: "straight",
-      quality: conf >= 0.58 ? "ok" : "near",
-      confidence: conf,
-      detail: `冲↑ dy=${dy.toFixed(2)}`,
-    };
+  const needShape = running && step < SEQ.length ? required().shape : null;
+  if (needShape === "straight" && straight) return straight;
+  if (needShape === "bridge" && bridge) return bridge;
+  if (straight && !bridge) return straight;
+  if (bridge && !straight) return bridge;
+  if (straight && bridge) {
+    return straight.confidence >= bridge.confidence ? straight : bridge;
   }
-  if (downScore > upScore && downScore >= 0.28) {
-    const conf = Math.min(0.98, 0.52 + downScore * 0.22);
-    return {
-      shape: "bridge",
-      quality: conf >= 0.58 ? "ok" : "near",
-      confidence: conf,
-      detail: `膀↓ dy=${dy.toFixed(2)}`,
-    };
+  if (!leftOk && !rightOk) {
+    return { shape: "unknown", quality: "lost", confidence: 0, detail: "无人", side: null };
   }
-  return { shape: "unknown", quality: "near", confidence: 0.25, detail: "弱特征" };
+  if (leftOk && !inFrame(lm, left) && rightOk && !inFrame(lm, right)) {
+    return { shape: "unknown", quality: "lost", confidence: 0, detail: "出画", side: null };
+  }
+  return {
+    shape: "unknown",
+    quality: "near",
+    confidence: 0.2,
+    detail: nearDetail || "弱特征",
+    side: null,
+  };
 }
 
 function buildSeqUI() {
@@ -861,8 +931,8 @@ function resetIdle() {
   $("btnStrike").disabled = mode === "contest";
   $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。";
   $("note").textContent = camReady
-    ? "点开始；对着镜头按当前招出式（日课可用触控演示）"
-    : "先开摄像头（需 HTTPS／本机服务），再点开始";
+    ? "点开始；双手入镜后开课。无摄像头可按 F/J 调试。"
+    : "日课可直接开始（无摄像头按 F/J 调试）；开摄像头后须双手入镜。";
   cancelAnimationFrame(raf);
   $("camWrap").classList.remove("lost");
   applyStepVisual();
@@ -921,14 +991,14 @@ async function ensureCamera() {
     camReady = true;
     $("camStatus").textContent = "识别中…";
     $("overlay").classList.remove("show");
-    $("note").textContent = "点开始；对着镜头按当前招出式（日课可用触控演示）";
+    $("note").textContent = "点开始；双手入镜后开课。无摄像头可按 F/J 调试。";
     if (!handLandmarker) handFailed = false;
     return true;
   } catch (err) {
     camReady = false;
     $("camStatus").textContent = "权限失败／待开启";
     showBanner("请允许摄像头后点「开启摄像头」", 2200);
-    $("note").textContent = "浏览器未授权摄像头，或须 HTTPS／localhost；日课仍可用触控演示验证谱面。错误：" + (err && err.name ? err.name : "unknown");
+    $("note").textContent = "摄像头未授权；日课可直接开始，按 F/J 或触控演示调试。错误：" + (err && err.name ? err.name : "unknown");
     return false;
   }
 }
@@ -996,14 +1066,10 @@ async function initPose() {
 }
 
 const PRESENT_MISS_GRACE_MS = 160;
-const PRESENT_LOST_HOLD_MS = 480;
-const PRESENT_LOST_FADE_MS = 1100;
-const PRESENT_CUN_MS = 720;
-const PRESENT_SMOOTH_MS = 45;
-const WRIST_AGREE_ENTER = 0.02;
-const WRIST_AGREE_HOLD = 0.006;
-const SIDE_FLIP_MARGIN = 0.02;
-const wristAgreeLatch = { Left: "", Right: "" };
+const PUSH_SMOOTH_MS = 90;
+const PULSE_PUSH_MS = 180;
+const PULSE_HOLD_MS = 150;
+const PULSE_RECOVER_MS = 250;
 
 function nextSyncTs(now) {
   const ts = now <= lastSyncTs ? lastSyncTs + 0.001 : now;
@@ -1015,52 +1081,6 @@ function shapeToPresent(shape) {
   if (shape === "straight") return "punch_drive";
   if (shape === "bridge") return "bong_bridge";
   return "guard";
-}
-
-function wristAgrees(lm, shape, side) {
-  const key = side === "Right" ? "Right" : "Left";
-  if (!lm || !lm[0] || !lm[12] || (shape !== "straight" && shape !== "bridge")) {
-    wristAgreeLatch[key] = "";
-    return false;
-  }
-  const dy = lm[12].y - lm[0].y;
-  const amount = shape === "straight" ? -dy : dy;
-  const held = wristAgreeLatch[key] === shape;
-  const next = held ? amount > WRIST_AGREE_HOLD : amount > WRIST_AGREE_ENTER;
-  wristAgreeLatch[key] = next ? shape : "";
-  return next;
-}
-
-function canonicalAngle(drawPose, imageSide) {
-  if (drawPose === "guard") return -Math.PI / 2;
-  if (drawPose === "punch_drive") return imageSide === "imageLeft" ? -0.78 : Math.PI + 0.78;
-  return imageSide === "imageLeft" ? 0.78 : Math.PI - 0.78;
-}
-
-function resolveAngle(drawPose, lm, imageSide, handSide) {
-  const base = canonicalAngle(drawPose, imageSide);
-  const key = handSide === "Right" ? "Right" : "Left";
-  if (drawPose === "guard" || !lm || !lm[0] || !lm[12]) {
-    wristAgreeLatch[key] = "";
-    return base;
-  }
-  const shape = drawPose === "punch_drive" ? "straight" : "bridge";
-  if (!wristAgrees(lm, shape, handSide)) return base;
-  const obs = Math.atan2(lm[12].y - lm[0].y, lm[12].x - lm[0].x);
-  let d = obs - base;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  if (Math.abs(d) > 1.05) return base;
-  return base + d * 0.28;
-}
-
-function palmScale(lm) {
-  const a = lm && lm[5];
-  const b = lm && lm[17];
-  if (!a || !b) return 1;
-  const span = Math.hypot(a.x - b.x, a.y - b.y);
-  if (!span) return 1;
-  return Math.min(1.35, Math.max(0.75, span / 0.1));
 }
 
 const skinImg = { Left: new Image(), Right: new Image() };
@@ -1101,26 +1121,26 @@ bindWristU(skinImg.Left, "Left");
 bindWristU(skinImg.Right, "Right");
 
 function splitHands(packets) {
-  let left = null;
-  let right = null;
   const list = packets || [];
+  const ranked = [];
   for (let i = 0; i < list.length; i++) {
     const item = list[i];
     if (!item || !item.lm || !item.lm[0] || item.lm[0].x == null) continue;
-    if (item.side === "Left" && (!left || item.score >= left.score)) left = item;
-    if (item.side === "Right" && (!right || item.score >= right.score)) right = item;
+    ranked.push(item);
   }
-  if (!left && !right) {
-    const bare = [];
-    for (let i = 0; i < list.length; i++) {
-      const item = list[i];
-      if (item && item.lm && item.lm[0] && item.side !== "Left" && item.side !== "Right") bare.push(item);
-    }
-    if (bare.length >= 2) {
-      bare.sort((a, b) => a.lm[0].x - b.lm[0].x);
-      right = { lm: bare[0].lm, side: "Right", score: bare[0].score || 0 };
-      left = { lm: bare[bare.length - 1].lm, side: "Left", score: bare[bare.length - 1].score || 0 };
-    }
+  ranked.sort((a, b) => (b.score || 0) - (a.score || 0));
+  const top = ranked.slice(0, 2);
+  let left = null;
+  let right = null;
+  if (top.length >= 2) {
+    top.sort((a, b) => a.lm[0].x - b.lm[0].x);
+    // Unmirrored selfie frame: smaller x is the person's right hand.
+    right = { lm: top[0].lm, side: "Right", score: top[0].score || 0 };
+    left = { lm: top[1].lm, side: "Left", score: top[1].score || 0 };
+  } else if (top.length === 1) {
+    const item = top[0];
+    if (item.side === "Left") left = item;
+    else right = item;
   }
   let presence = "need_both";
   if (left && right) presence = "both";
@@ -1129,213 +1149,249 @@ function splitHands(packets) {
   return { presence, left, right };
 }
 
-function handLabel(action, presence, seenBoth, promptBoth, now, cunUntil) {
-  if (cunUntil && now < cunUntil) return "寸劲到位";
+function handGateLabel(action, presence, seenBoth, promptBoth) {
   if (presence === "miss_left" || presence === "miss_right") return "请双手入镜";
   if (presence === "need_both" && (promptBoth || seenBoth)) {
     if (seenBoth && action === "lost") return "手模丢失，回到框内";
     return "请双手入镜";
   }
-  if (action === "punch_drive" || action === "bong_bridge") return "手模跟手中";
   if (action === "lost" && seenBoth) return "手模丢失，回到框内";
   return "";
 }
 
-function palmTilt(drawPose, side) {
-  if (drawPose === "punch_drive") return side === "Left" ? 0.22 : -0.22;
-  if (drawPose === "bong_bridge") return side === "Left" ? -0.28 : 0.28;
-  return 0;
-}
+const LANDSCAPE_MQ = "(orientation: landscape) and (min-width: 1000px)";
+const HAND_H_LAND = 0.47;
+const HAND_H_PORT = 0.9;
+let stagePoleFrac = 0.5;
+let stageReachFrac = 0.18;
 
-function placeHand(hand, w, h) {
-  let xNorm = 1 - hand.x;
-  if (hand.side === "Left") xNorm = Math.min(xNorm, 0.36);
-  if (hand.side === "Right") xNorm = Math.max(xNorm, 0.64);
-  const pole = w * 0.58;
-  let x = xNorm * w;
-  const gap = w * 0.1;
-  if (Math.abs(x - pole) < gap) x = x < pole ? pole - gap : pole + gap;
-  const margin = Math.max(8, w * 0.04);
-  x = Math.min(w - margin, Math.max(margin, x));
-  const yNorm = Math.min(1, Math.max(0, hand.y));
-  const y = h * (0.9 + 0.04 * yNorm);
-  const angle = Math.PI - hand.angle;
-  return { x, y, angle, tilt: palmTilt(hand.drawPose, hand.side), side: hand.side, scale: hand.scale || 1 };
-}
-
-function visibleHandSpan(anchorY, dh, limit) {
-  const top = anchorY - 0.78 * dh;
-  const bot = anchorY + 0.22 * dh;
-  return Math.max(0, Math.min(limit, bot) - Math.max(0, top));
-}
-
-function dhCovering(anchorY, limit, goal) {
-  const need = Math.max(0, Math.min(goal, limit));
-  let lo = 0;
-  let hi = Math.max(limit, need) * 4;
-  for (let i = 0; i < 22; i++) {
-    const mid = (lo + hi) / 2;
-    if (visibleHandSpan(anchorY, mid, limit) < need) lo = mid;
-    else hi = mid;
+function syncStageGeom() {
+  const stage = document.querySelector(".stage");
+  if (!stage) return;
+  const sr = stage.getBoundingClientRect();
+  const raw = getComputedStyle(stage).getPropertyValue("--pole-x").trim();
+  const pole = stage.querySelector(".pole");
+  if (raw.endsWith("%")) stagePoleFrac = parseFloat(raw) / 100;
+  else if (pole && sr.width > 1) {
+    const pr = pole.getBoundingClientRect();
+    stagePoleFrac = (pr.left + pr.width / 2 - sr.left) / sr.width;
   }
-  return hi;
+  if (sr.width < 2) return;
+  const mid = sr.left + sr.width * stagePoleFrac;
+  let reach = 0;
+  stage.querySelectorAll(".pole, .arm, .leg").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    reach = Math.max(reach, mid - r.left, r.right - mid);
+  });
+  stageReachFrac = reach / sr.width;
+}
+
+function handExtents(dw, dh, u, tilt) {
+  const c = Math.cos(tilt);
+  const s = Math.sin(tilt);
+  let minX = 0;
+  let maxX = 0;
+  const pts = [
+    [-dw * u, -dh * 0.78],
+    [dw * (1 - u), -dh * 0.78],
+    [-dw * u, dh * 0.22],
+    [dw * (1 - u), dh * 0.22],
+  ];
+  for (let i = 0; i < pts.length; i++) {
+    const xr = pts[i][0] * c - pts[i][1] * s;
+    if (xr < minX) minX = xr;
+    if (xr > maxX) maxX = xr;
+  }
+  return { minX, maxX };
+}
+
+/** 固定车道：左手在杆左、右手在杆右；push 0 护手、1 前推并缩小约 15% */
+function laneHand(side, push, w, h) {
+  const p = Math.min(1, Math.max(0, push));
+  const landscape = window.matchMedia(LANDSCAPE_MQ).matches;
+  const pole = w * stagePoleFrac;
+  const tilt = side === "Left" ? 0.18 : -0.18;
+  const scale = 1 - 0.15 * p;
+  const frac = landscape ? HAND_H_LAND : HAND_H_PORT;
+  const dh = h * frac * scale;
+  const lift = h * 0.1 * p;
+  const pad = Math.max(4, h * 0.012);
+  const y = h - pad - dh * 0.22 - lift;
+  const img = skinImg[side];
+  const aspect = img && img.naturalWidth ? img.naturalWidth / img.naturalHeight : (side === "Left" ? 157 / 512 : 191 / 512);
+  const dw = dh * aspect;
+  const u = skinAnchorU[side] || 0.5;
+  let x;
+  if (!landscape) {
+    const gap = w * (0.22 + (0.09 - 0.22) * p);
+    x = side === "Left" ? pole - gap : pole + gap;
+  } else {
+    const ext = handExtents(dw, dh, u, tilt);
+    const stage = document.querySelector(".stage");
+    const cssW = stage ? stage.getBoundingClientRect().width : w;
+    const dpr = cssW > 1 ? w / cssW : 1;
+    const gap = Math.max(24 * dpr, w * 0.02);
+    const reach = w * stageReachFrac + gap;
+    const inward = gap * 0.85 * p;
+    if (side === "Left") {
+      x = pole - reach - ext.maxX + inward;
+      const minX = gap - ext.minX;
+      if (x < minX) x = minX;
+    } else {
+      x = pole + reach - ext.minX - inward;
+      const maxX = w - gap - ext.maxX;
+      if (x > maxX) x = maxX;
+    }
+  }
+  return { x, y, tilt, side, scale, frac };
 }
 
 function fitHandFrame(host) {
+  if (!host) return 0;
+  if (window.matchMedia(LANDSCAPE_MQ).matches) {
+    if (host.style.height) host.style.height = "";
+    return host.clientHeight;
+  }
   const mid = $("armMid");
   const ru = $("armRU");
-  if (!host || !mid || !ru) return 0;
+  if (!mid || !ru) return 0;
   const armBottom = Math.max(mid.getBoundingClientRect().bottom, ru.getBoundingClientRect().bottom);
-  const landscape = window.matchMedia("(orientation: landscape) and (min-height: 640px)").matches;
   const bottom = host.getBoundingClientRect().bottom;
   const room = Math.max(0, bottom - armBottom - 10);
   const stageH = host.parentElement ? host.parentElement.clientHeight : window.innerHeight;
-  const want = window.innerWidth / 3;
-  const len = landscape ? Math.min(stageH, want) : Math.min(stageH, room);
+  const len = Math.min(stageH, room);
   const px = Math.round(len);
   const next = px + "px";
   if (host.style.height !== next) host.style.height = next;
   return px;
 }
 
-function drawSkinHand(ctx, img, at, h, alpha, pulse) {
+function drawSkinHand(ctx, img, at, h, alpha) {
   if (!img || !img.complete || !img.naturalWidth) return false;
-  const pop = 1 + 0.08 * (pulse > 0 ? pulse : 0);
-  const fit = Math.min(1.15, Math.max(0.85, at.scale || 1));
-  const dh = dhCovering(at.y, h, h * pop * fit);
+  const scale = at.scale == null ? 1 : at.scale;
+  const frac = at.frac == null ? HAND_H_LAND : at.frac;
+  const dh = h * frac * scale;
   const dw = dh * (img.naturalWidth / img.naturalHeight);
   ctx.save();
   ctx.translate(at.x, at.y);
-  ctx.rotate(at.angle + Math.PI / 2 + at.tilt);
+  ctx.rotate(at.tilt || 0);
   ctx.globalAlpha = alpha;
-  if (pulse > 0.05) {
-    ctx.shadowColor = "rgba(255, 214, 140, 0.85)";
-    ctx.shadowBlur = Math.max(6, dh * 0.08) * pulse;
-  }
   const u = skinAnchorU[at.side] || 0.5;
   ctx.drawImage(img, -dw * u, -dh * 0.78, dw, dh);
   ctx.restore();
   return true;
 }
 
-function lerpAngle(from, to, t) {
-  let d = to - from;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return from + d * t;
-}
-
-function approachHand(prev, target, t) {
-  if (!prev || t >= 1) {
-    return {
-      x: target.x,
-      y: target.y,
-      scale: target.scale,
-      angle: target.angle,
-      side: target.side,
-      drawPose: target.drawPose,
-    };
-  }
-  return {
-    x: prev.x + (target.x - prev.x) * t,
-    y: prev.y + (target.y - prev.y) * t,
-    scale: prev.scale + (target.scale - prev.scale) * t,
-    angle: lerpAngle(prev.angle, target.angle, t),
-    side: target.side,
-    drawPose: target.drawPose,
-  };
-}
-
 function createHandViewState() {
   let present = "guard";
   let presence = "idle";
-  let drawPose = "guard";
   let seenBoth = false;
   let promptBoth = false;
   let tracking = false;
   let missingSince = 0;
-  let cunUntil = 0;
   let hold01 = 0;
-  let frozen = [];
-  let displayHands = [];
+  let pushL = 0;
+  let pushR = 0;
+  let targetL = 0;
+  let targetR = 0;
+  let pulseL = null;
+  let pulseR = null;
   let lastSmoothAt = 0;
-  let sideFlipSince = 0;
+  let tagSide = null;
 
-  function wristGap(a, b) {
-    const ax = a.lm ? a.lm[0].x : a.x;
-    const ay = a.lm ? a.lm[0].y : a.y;
-    const bx = b.lm ? b.lm[0].x : b.x;
-    const by = b.lm ? b.lm[0].y : b.y;
-    return Math.hypot(ax - bx, ay - by);
+  function pulseGoal(pulse, now) {
+    if (!pulse) return null;
+    const t = now - pulse.t0;
+    if (t < PULSE_PUSH_MS) return Math.min(1, t / PULSE_PUSH_MS);
+    if (t < PULSE_PUSH_MS + PULSE_HOLD_MS) return 1;
+    const back = t - PULSE_PUSH_MS - PULSE_HOLD_MS;
+    if (back >= PULSE_RECOVER_MS) return null;
+    return Math.max(0, 1 - back / PULSE_RECOVER_MS);
   }
 
-  function stableSides(split, now) {
-    if (split.presence !== "both" || !split.left || !split.right) return split;
-    let prevL = null;
-    let prevR = null;
-    for (let i = 0; i < frozen.length; i++) {
-      if (frozen[i].side === "Left") prevL = frozen[i];
-      else if (frozen[i].side === "Right") prevR = frozen[i];
+  function desiredPush(side, now) {
+    const pulse = side === "L" ? pulseL : pulseR;
+    const fromPulse = pulseGoal(pulse, now);
+    if (fromPulse == null && pulse) {
+      if (side === "L") pulseL = null;
+      else pulseR = null;
     }
-    if (!prevL || !prevR) {
-      sideFlipSince = 0;
-      return split;
-    }
-    const keep = wristGap(split.left, prevL) + wristGap(split.right, prevR);
-    const swap = wristGap(split.left, prevR) + wristGap(split.right, prevL);
-    if (keep <= swap + SIDE_FLIP_MARGIN) {
-      sideFlipSince = 0;
-      return split;
-    }
-    if (!sideFlipSince) sideFlipSince = now;
-    if (now - sideFlipSince < PRESENT_MISS_GRACE_MS) {
-      return {
-        presence: "both",
-        left: { lm: split.right.lm, side: "Left", score: split.right.score },
-        right: { lm: split.left.lm, side: "Right", score: split.left.score },
-      };
-    }
-    sideFlipSince = 0;
-    return split;
+    if (fromPulse != null) return fromPulse;
+    return side === "L" ? targetL : targetR;
   }
 
-  function packOne(packet, action) {
-    const lm = packet.lm;
-    const imageSide = lm[0].x < 0.5 ? "imageLeft" : "imageRight";
-    return {
-      x: lm[0].x,
-      y: lm[0].y,
-      scale: palmScale(lm),
-      angle: resolveAngle(action, lm, imageSide, packet.side),
-      side: packet.side,
-      drawPose: action,
-    };
+  function moveTagText() {
+    if (tagSide === "L") return "左手 · 日字冲拳";
+    if (tagSide === "R") return "右手 · 膀手";
+    return "";
+  }
+
+  function shouldDrawHands() {
+    if (!camReady) return true;
+    if (presence === "both") return true;
+    if (seenBoth && missingSince && (performance.now() - missingSince) < PRESENT_MISS_GRACE_MS) return true;
+    return false;
   }
 
   return {
     reset() {
       present = "guard";
       presence = "idle";
-      drawPose = "guard";
       seenBoth = false;
       promptBoth = false;
       tracking = false;
       missingSince = 0;
-      cunUntil = 0;
       hold01 = 0;
-      frozen = [];
-      displayHands = [];
+      pushL = 0;
+      pushR = 0;
+      targetL = 0;
+      targetR = 0;
+      pulseL = null;
+      pulseR = null;
       lastSmoothAt = 0;
-      sideFlipSince = 0;
-      wristAgreeLatch.Left = "";
-      wristAgreeLatch.Right = "";
+      tagSide = null;
     },
     setPrompt(on) {
       promptBoth = !!on;
       if (promptBoth && presence === "idle") presence = "need_both";
     },
+    pulse(side) {
+      const now = performance.now();
+      if (side === "L") {
+        pulseL = { t0: now };
+        tagSide = "L";
+      } else if (side === "R") {
+        pulseR = { t0: now };
+        tagSide = "R";
+      }
+    },
+    setPoseDrive(side, shape, quality) {
+      const active = quality === "ok" || quality === "near";
+      if (!active || !side || (shape !== "straight" && shape !== "bridge")) {
+        targetL = 0;
+        targetR = 0;
+        if (!pulseL && !pulseR) tagSide = null;
+        return;
+      }
+      if (side === "L" && shape === "straight") {
+        targetL = 1;
+        targetR = 0;
+        tagSide = "L";
+        present = "punch_drive";
+      } else if (side === "R" && shape === "bridge") {
+        targetR = 1;
+        targetL = 0;
+        tagSide = "R";
+        present = "bong_bridge";
+      } else {
+        targetL = 0;
+        targetR = 0;
+        if (!pulseL && !pulseR) tagSide = null;
+        present = "guard";
+      }
+    },
     sync(shape, packets, now) {
-      const split = stableSides(splitHands(packets), now);
+      const split = splitHands(packets);
       if (split.presence === "both") {
         const action = shapeToPresent(shape);
         seenBoth = true;
@@ -1343,8 +1399,6 @@ function createHandViewState() {
         missingSince = 0;
         presence = "both";
         present = action;
-        drawPose = action;
-        frozen = [packOne(split.left, action), packOne(split.right, action)];
         return { presence: "both", action, holdOff: false };
       }
       if (tracking) {
@@ -1355,22 +1409,18 @@ function createHandViewState() {
       if (inGrace) {
         return { presence: "both", action: present, holdOff: false };
       }
-      frozen = [];
-      sideFlipSince = 0;
       presence = split.presence;
       present = seenBoth ? "lost" : "guard";
-      drawPose = "guard";
+      targetL = 0;
+      targetR = 0;
       return { presence, action: present, holdOff: !!seenBoth };
     },
-    onHitOk() {
-      cunUntil = performance.now() + PRESENT_CUN_MS;
-    },
+    onHitOk() {},
     onHoldProgress(p) {
       hold01 = p > 0 ? Math.min(1, p) : 0;
     },
     paint(ctx, w, h) {
-      if (presence !== "both" || frozen.length < 2) {
-        displayHands = [];
+      if (!shouldDrawHands()) {
         lastSmoothAt = 0;
         return;
       }
@@ -1378,47 +1428,40 @@ function createHandViewState() {
       let t = 1;
       if (lastSmoothAt) {
         const dt = now - lastSmoothAt;
-        t = dt > 200 ? 1 : (dt <= 0 ? 0 : 1 - Math.exp(-dt / PRESENT_SMOOTH_MS));
+        t = dt > 200 ? 1 : (dt <= 0 ? 0 : 1 - Math.exp(-dt / PUSH_SMOOTH_MS));
       }
       lastSmoothAt = now;
-      const next = [];
-      for (let i = 0; i < frozen.length; i++) {
-        const target = frozen[i];
-        let prev = null;
-        for (let j = 0; j < displayHands.length; j++) {
-          if (displayHands[j].side === target.side) prev = displayHands[j];
-        }
-        next.push(approachHand(prev, target, t));
-      }
-      displayHands = next;
-      const pulse = cunUntil && now < cunUntil
-        ? Math.sin(Math.min(1, (PRESENT_CUN_MS - (cunUntil - now)) / 220) * Math.PI) || 0
-        : 0;
-      for (let i = 0; i < displayHands.length; i++) {
-        const at = placeHand(displayHands[i], w, h);
-        const img = skinImg[at.side];
-        drawSkinHand(ctx, img, at, h, 0.94 + hold01 * 0.06, pulse > 0 ? pulse : 0);
-      }
+      const wantL = desiredPush("L", now);
+      const wantR = desiredPush("R", now);
+      pushL += (wantL - pushL) * t;
+      pushR += (wantR - pushR) * t;
+      if (Math.abs(pushL) < 0.002) pushL = 0;
+      if (Math.abs(pushR) < 0.002) pushR = 0;
+      const alpha = 0.94 + hold01 * 0.06;
+      drawSkinHand(ctx, skinImg.Left, laneHand("Left", pushL, w, h), h, alpha);
+      drawSkinHand(ctx, skinImg.Right, laneHand("Right", pushR, w, h), h, alpha);
     },
     paintStage() {
-      const now = performance.now();
       const canvas = $("handCanvas");
       const tag = $("handTag");
       const host = $("handOverlay");
-      const shown = presence === "both" ? present : (presence === "idle" ? "guard" : presence);
+      const shown = presence === "both" ? present : (presence === "idle" || !camReady ? "guard" : presence);
       if (host) {
         host.dataset.present = shown;
-        host.dataset.hands = presence;
+        host.dataset.hands = !camReady ? "both" : presence;
       }
       if (tag) {
-        const text = handLabel(present, presence, seenBoth, promptBoth, now, cunUntil);
-        const cls = "hand-tag" + (text === "寸劲到位" ? " cun" : text === "请双手入镜" ? " need" : text === "手模丢失，回到框内" ? " lost" : "");
+        const gate = camReady ? handGateLabel(present, presence, seenBoth, promptBoth) : "";
+        const move = (!gate && (pushL > 0.08 || pushR > 0.08 || tagSide)) ? moveTagText() : "";
+        const text = gate || move;
+        const cls = "hand-tag" + (text === "请双手入镜" ? " need" : text === "手模丢失，回到框内" ? " lost" : "");
         if (tag.textContent !== text) tag.textContent = text;
         if (tag.className !== cls) tag.className = cls;
         tag.hidden = !text;
       }
       if (!canvas || !host) return;
       fitHandFrame(host);
+      syncStageGeom();
       const rect = canvas.getBoundingClientRect();
       if (rect.width < 2 || rect.height < 2) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1442,14 +1485,14 @@ function kickHand(vision, delegate) {
     if (awaitBoth && !running) {
       $("camStatus").textContent = "请双手入镜";
       $("note").textContent = ok && camReady
-        ? "双手同时入镜后开课。触控演示可不经双手。"
-        : "需开摄像头且双手入镜。触控演示可不经双手。";
+        ? "双手同时入镜后开课。无摄像头可按 F/J 调试。"
+        : "开摄像头后须双手入镜；也可无摄像头按 F/J 调试。";
       return;
     }
     if (running) return;
     $("note").textContent = ok
-      ? "姿态与手模已就绪（" + delegate + "）。开摄像头后开始；日课可用触控。"
-      : "姿态已就绪，手模未加载。日课与触控演示仍可用。";
+      ? "姿态与手模已就绪（" + delegate + "）。日课可直接开始；开摄像头后须双手入镜。"
+      : "姿态已就绪，手模未加载。日课可按 F/J 或触控演示。";
   }).catch((err) => console.warn("hand", err));
 }
 
@@ -1693,6 +1736,11 @@ function applyCandidate(c) {
 }
 
 
+function poseTooLow(lm) {
+  const dropped = (p) => !p || (typeof p.visibility === "number" && p.visibility < 0.5) || p.y > 0.8;
+  return dropped(lm && lm[11]) && dropped(lm && lm[12]);
+}
+
 function predictLoop() {
   try {
     const video = $("video");
@@ -1733,8 +1781,27 @@ function predictLoop() {
         }
         if (handFollow && running) setHandGatePause(!!view.holdOff);
       }
+      if (camReady && running && !handGatePaused) {
+        handViewState.setPoseDrive(candidate.side, candidate.shape, candidate.quality);
+      } else if (camReady) {
+        handViewState.setPoseDrive(null, null, null);
+      }
       if (lm || running) applyCandidate(candidate);
-      if (awaitBoth && !running) $("camStatus").textContent = "请双手入镜";
+      if (awaitBoth || handGatePaused) {
+        if (handPoints) {
+          let seen = 0;
+          for (let i = 0; i < handPoints.length; i++) {
+            const wpt = handPoints[i] && handPoints[i].lm && handPoints[i].lm[0];
+            if (wpt && wpt.x != null) seen += 1;
+          }
+          const low = !!result && poseTooLow(result.landmarks && result.landmarks[0]);
+          $("camStatus").textContent = low
+            ? "人偏下：屏幕前倾或坐远一点"
+            : ("检出 " + seen + "/2 只手");
+        } else if (awaitBoth && !running) {
+          $("camStatus").textContent = "请双手入镜";
+        }
+      }
       handViewState.onHoldProgress(running && holdAccum > 0 ? holdAccum / HOLD_PASS_MS : 0);
 
       const canvas = $("overlayCanvas");
@@ -1742,9 +1809,9 @@ function predictLoop() {
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (lm) {
-        const arm = pickArm(lm);
-        if (arm) {
+      if (lm && candidate.side) {
+        const arm = armOf(lm, candidate.side);
+        if (armVisible(arm)) {
           ctx.fillStyle = "rgba(232,215,195,0.85)";
           for (const p of [arm.sh, arm.el, arm.wr]) {
             ctx.beginPath();
@@ -1758,6 +1825,16 @@ function predictLoop() {
           ctx.lineTo(arm.el.x * canvas.width, arm.el.y * canvas.height);
           ctx.lineTo(arm.wr.x * canvas.width, arm.wr.y * canvas.height);
           ctx.stroke();
+        }
+      }
+      if (handPoints) {
+        ctx.fillStyle = "#3aa0c8";
+        for (let i = 0; i < handPoints.length; i++) {
+          const wpt = handPoints[i] && handPoints[i].lm && handPoints[i].lm[0];
+          if (!wpt || wpt.x == null || wpt.y == null) continue;
+          ctx.beginPath();
+          ctx.arc(wpt.x * canvas.width, wpt.y * canvas.height, 4, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
     }
@@ -1781,6 +1858,18 @@ function beginRound() {
 
 async function start() {
   resetIdle();
+  if (mode === "drill" && !camReady) {
+    awaitBoth = false;
+    handFollow = false;
+    handViewState.setPrompt(false);
+    $("btnStrike").disabled = false;
+    $("camStatus").textContent = "调试·无摄像头";
+    $("note").textContent = "无摄像头可按 F/J 调试：F=左手冲拳，J=右手膀手；也可用触控演示。";
+    showBanner("调试开课 · F/J", 1400);
+    beginRound();
+    try { await initPose(); } catch (e) { console.error(e); }
+    return;
+  }
   const okCam = await ensureCamera();
   if (!okCam && mode === "contest") {
     showBanner("比赛专用需摄像头，请先点「开启摄像头」", 2000);
@@ -1793,7 +1882,7 @@ async function start() {
     handViewState.setPrompt(true);
     $("btnStrike").disabled = false;
     $("camStatus").textContent = "请双手入镜";
-    $("note").textContent = "需开摄像头且双手入镜。触控演示可不经双手。";
+    $("note").textContent = "双手同时入镜后开课。无摄像头可按 F/J 调试。";
     showBanner("请双手入镜", 1600);
   }
   try { await initPose(); }
@@ -1801,7 +1890,7 @@ async function start() {
     const msg = (e && (e.message || String(e))) || "未知错误";
     if (!poseLandmarker) {
       $("camStatus").textContent = "模型失败";
-      $("note").textContent = "姿态模型加载失败：" + msg + "。日课可用触控演示；可点「重试模型」。";
+      $("note").textContent = "姿态模型加载失败：" + msg + "。日课可按 F/J 或触控演示；可点「重试模型」。";
     }
     console.error(e);
   }
@@ -1816,8 +1905,8 @@ async function start() {
   if (mode === "drill") {
     $("camStatus").textContent = "请双手入镜";
     $("note").textContent = okCam && handLandmarker
-      ? "双手同时入镜后开课。触控演示可不经双手。"
-      : "需开摄像头且双手入镜。触控演示可不经双手。";
+      ? "双手同时入镜后开课。触控演示／F／J 可不经双手门。"
+      : "双手入镜后开课；也可关摄像头用 F/J 调试。";
     return;
   }
   beginRound();
@@ -1844,15 +1933,33 @@ function finish(pass) {
   $("overlay").classList.add("show");
 }
 
+function pulseMoveSide(shape) {
+  const side = shape === "straight" ? "L" : shape === "bridge" ? "R" : null;
+  if (side) handViewState.pulse(side);
+}
+
+function openDrillWithoutCamera() {
+  awaitBoth = false;
+  handFollow = false;
+  setHandGatePause(false);
+  handViewState.setPrompt(false);
+  beginRound();
+}
+
+function tryKeyDrive(shape) {
+  if (mode === "contest" || step >= 10) return;
+  if ($("overlay").classList.contains("show")) return;
+  pulseMoveSide(shape);
+  if (!running) openDrillWithoutCamera();
+  const need = required();
+  if (shape === need.shape) onHitValid(true);
+  else onHitWrong("须出" + need.name);
+}
+
 function tryTapFallback() {
   if (mode === "contest" || step >= 10) return;
-  if (!running) {
-    awaitBoth = false;
-    handFollow = false;
-    setHandGatePause(false);
-    handViewState.setPrompt(false);
-    beginRound();
-  }
+  if (!running) openDrillWithoutCamera();
+  pulseMoveSide(required().shape);
   onHitValid(true);
 }
 
@@ -1869,13 +1976,26 @@ async function openCameraFromClick() {
   try { await initPose(); } catch (e) { console.error(e); }
 }
 
-$("btnCam").onclick = () => { openCameraFromClick(); };
 $("btnCamDock").onclick = () => { openCameraFromClick(); };
 $("btnStrike").onclick = tryTapFallback;
 
+window.addEventListener("keydown", (e) => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (k === "f") {
+    e.preventDefault();
+    tryKeyDrive("straight");
+  } else if (k === "j") {
+    e.preventDefault();
+    tryKeyDrive("bridge");
+  }
+});
+
 resetIdle();
-$("camStatus").textContent = "待开启 · 请点「开启摄像头」";
-$("note").textContent = secureHint() || "先点「开启摄像头」允许权限，再点开始（须 HTTPS 或 localhost；同目录需 mediapipe/）";
+$("camStatus").textContent = "待开启 · 日课可直接开始";
+$("note").textContent = secureHint() || "日课可直接开始（F=冲／J=膀）；开摄像头后须双手入镜（HTTPS／localhost）";
 
 $("btnRetryModel") && ($("btnRetryModel").onclick = () => {
   if (handLandmarker && handLandmarker.close) {
