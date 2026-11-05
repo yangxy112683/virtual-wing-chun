@@ -51,6 +51,7 @@
     font-size: 9px; text-align: center; padding: 3px 2px;
     background: rgba(0,0,0,0.65); color: rgba(232,215,195,0.85);
   }
+  .cam-status:empty { display: none; }
   .topbar {
     position: absolute; top: 8px; left: 0; right: 0; text-align: center;
     font-size: 11px; letter-spacing: 0.18em; color: rgba(232,215,195,0.35); z-index: 8;
@@ -582,7 +583,7 @@
       <div class="hud-main">
         <div class="step-tag punch" id="stepTag">第 1/10 击 · 日字冲拳（右上）</div>
         <div class="instr" id="instr">交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。</div>
-        <div class="count" id="count">0 / 10 · 识别：—</div>
+        <div class="count" id="count">0 / 10</div>
         <div class="hold-track" id="holdTrack"><div class="hold-bar punch" id="holdBar"></div></div>
         <div class="hold-meta" id="holdMeta"></div>
         <div class="seq" id="seq"></div>
@@ -611,6 +612,13 @@
   </div>
 </div>
 <script type="module">
+import {
+  captureTipAudience,
+  formatCountLine,
+  releaseDebugCaptureTip,
+  showCaptureTipText,
+} from "./capture-tip.mjs";
+
 let PoseLandmarker = null;
 let HandLandmarker = null;
 let FilesetResolver = null;
@@ -702,6 +710,33 @@ let lostStreak = 0;
 const LOST_FRAMES = 14; // ~0.2s+ before soft-pause; cuts false「回到框内」
 
 const $ = (id) => document.getElementById(id);
+
+function debugFromLocation() {
+  const value = new URLSearchParams(location.search).get("debug");
+  if (value == null) return false;
+  return value === "" || value === "1" || value === "true";
+}
+
+let debugMode = debugFromLocation();
+let countDetail = "识别：—";
+
+function setCamStatus(text) {
+  $("camStatus").textContent = showCaptureTipText(text, debugMode);
+}
+
+function setCountDetail(detail) {
+  countDetail = detail || "";
+  $("count").textContent = formatCountLine(step, countDetail, debugMode);
+}
+
+function setDebugMode(on) {
+  debugMode = !!on;
+  const el = $("camStatus");
+  if (!debugMode) el.textContent = releaseDebugCaptureTip(el.textContent);
+  $("count").textContent = formatCountLine(step, countDetail, debugMode);
+  showBanner(debugMode ? "调试提示：开" : "调试提示：关", 800);
+}
+
 const circum = 2 * Math.PI * 28;
 const requiredId = () => SEQ[step];
 const required = () => MOVES[requiredId()];
@@ -908,7 +943,7 @@ function resetIdle() {
   posePaused = false;
   if (typeof handViewState !== "undefined" && handViewState.reset) handViewState.reset();
   setHoldUI(false);
-  $("count").textContent = "0 / 10 · 识别：—";
+  setCountDetail("识别：—");
   $("timerText").textContent = Math.ceil(left);
   $("ring").style.strokeDashoffset = "0";
   $("hud").classList.remove("urgent");
@@ -953,13 +988,13 @@ async function ensureCamera() {
   const hint = secureHint();
   if (hint) {
     camReady = false;
-    $("camStatus").textContent = "需 HTTPS／localhost";
+    setCamStatus("需 HTTPS／localhost");
     showBanner("请用本机服务打开", 2200);
     $("note").textContent = hint;
     return false;
   }
   try {
-    $("camStatus").textContent = "申请权限…";
+    setCamStatus("申请权限…");
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -976,14 +1011,14 @@ async function ensureCamera() {
     video.srcObject = stream;
     await video.play();
     camReady = true;
-    $("camStatus").textContent = "识别中…";
+    setCamStatus("识别中…");
     $("overlay").classList.remove("show");
     $("note").textContent = "点开始；双手入镜后开课。无摄像头可按 F/J 调试。";
     if (!handLandmarker) handFailed = false;
     return true;
   } catch (err) {
     camReady = false;
-    $("camStatus").textContent = "权限失败／待开启";
+    setCamStatus("权限失败／待开启");
     showBanner("请允许摄像头后点「开启摄像头」", 2200);
     $("note").textContent = "摄像头未授权；日课可直接开始，按 F/J 或触控演示调试。错误：" + (err && err.name ? err.name : "unknown");
     return false;
@@ -996,7 +1031,7 @@ async function initPose() {
     return poseLandmarker;
   }
   if (poseLoading) return poseLoading;
-  $("camStatus").textContent = "加载识别模型…";
+  setCamStatus("加载识别模型…");
   $("note").textContent = "正在加载姿态模型（可先用触控演示开课）…";
   poseLoading = (async () => {
     if (!PoseLandmarker) {
@@ -1032,7 +1067,7 @@ async function initPose() {
             });
             console.log("pose ok", { wasm, model, delegate });
             visionSession = { vision, delegate };
-            $("camStatus").textContent = camReady ? "识别待命" : "模型就绪·请开摄像头";
+            setCamStatus(camReady ? "识别待命" : "模型就绪·请开摄像头");
             if (roundPhase === ROUND_PHASE.IDLE) $("note").textContent = "姿态已就绪，正在加载手模。日课与触控演示可用。";
             kickHand(vision, delegate);
             return poseLandmarker;
@@ -1044,7 +1079,7 @@ async function initPose() {
       }
     }
     const msg = (lastErr && (lastErr.message || String(lastErr))) || "未知错误";
-    $("camStatus").textContent = "模型失败";
+    setCamStatus("模型失败");
     $("note").textContent = "姿态模型加载失败：" + msg + "。请用本机服务打开并保留 mediapipe 文件夹；日课仍可用触控演示。";
     poseLoading = null;
     throw lastErr || new Error(msg);
@@ -1412,7 +1447,7 @@ const handViewState = createHandViewState();
 function kickHand(vision, delegate) {
   initHand(vision, delegate).then((ok) => {
     if (roundPhase === ROUND_PHASE.WAITING_FOR_BOTH) {
-      $("camStatus").textContent = "请双手入镜";
+      setCamStatus("请双手入镜");
       $("note").textContent = ok && camReady
         ? "双手同时入镜后开课。无摄像头可按 F/J 调试。"
         : "开摄像头后须双手入镜；也可无摄像头按 F/J 调试。";
@@ -1513,7 +1548,7 @@ function onHitValid() {
   flash(true);
   handViewState.onHitOk();
   step += 1;
-  $("count").textContent = step + " / 10 · 识别：ok";
+  setCountDetail("识别：ok");
   if (step >= 10) {
     finish(true);
     return;
@@ -1558,7 +1593,7 @@ function applyCandidate(c) {
   if (roundPhase !== ROUND_PHASE.ACTIVE) return;
   const now = performance.now();
   const label = c.shape + (c.detail ? ` ${c.detail}` : "");
-  $("count").textContent = `${step} / 10 · 识别：${c.shape}/${c.quality}`;
+  setCountDetail("识别：" + c.shape + "/" + c.quality);
 
   if (c.quality === "lost") {
     lostStreak += 1;
@@ -1568,9 +1603,9 @@ function applyCandidate(c) {
     holdLastTs = 0;
     if (lostStreak >= LOST_FRAMES) {
       setPaused(true);
-      $("camStatus").textContent = "回到框内";
+      setCamStatus("回到框内");
     } else {
-      $("camStatus").textContent = "识别中…";
+      setCamStatus("识别中…");
     }
     return;
   }
@@ -1578,14 +1613,14 @@ function applyCandidate(c) {
   if (posePaused) setPaused(false);
 
   if (step >= 10) {
-    $("camStatus").textContent = label;
+    if (captureTipAudience(label) !== "debug" || debugMode) setCamStatus(label);
     return;
   }
 
   const need = required();
   const coolLeft = lastHitAt ? POST_HIT_COOLDOWN - (now - lastHitAt) : 0;
   if (coolLeft > 0) {
-    $("camStatus").textContent = "冷却中 " + Math.ceil(coolLeft / 1000) + "s";
+    setCamStatus("冷却中 " + Math.ceil(coolLeft / 1000) + "s");
     holdAccum = 0;
     holdLastTs = 0;
     holdShape = null;
@@ -1601,7 +1636,7 @@ function applyCandidate(c) {
     holdShape = null;
     holdCount = 0;
     setHoldUI(false);
-    $("camStatus").textContent = label;
+    setCamStatus(label);
     return;
   }
 
@@ -1613,7 +1648,7 @@ function applyCandidate(c) {
     holdLastTs = 0;
     setHoldUI(false);
     onHitWrong("须出" + need.name);
-    $("camStatus").textContent = label;
+    setCamStatus(label);
     return;
   }
 
@@ -1626,8 +1661,8 @@ function applyCandidate(c) {
     const pct = Math.floor((holdAccum / HOLD_PASS_MS) * 100);
     const tag = need.sil === "punch" ? "冲态维持中" : "膀态维持中";
     setHoldUI(true, need.sil, sec, pct);
-    $("camStatus").textContent = tag + " " + sec.toFixed(1) + "/3s · " + pct + "%";
-    $("count").textContent = `${step} / 10 · ${tag} ${pct}%`;
+    setCamStatus(tag + " " + sec.toFixed(1) + "/3s · " + pct + "%");
+    setCountDetail(tag + " " + pct + "%");
     if (holdAccum >= HOLD_PASS_MS) {
       setHoldUI(false);
       onHitValid();
@@ -1735,7 +1770,7 @@ async function start() {
   resetIdle();
   if (mode === "drill" && !camReady) {
     $("btnStrike").disabled = false;
-    $("camStatus").textContent = "调试·无摄像头";
+    setCamStatus("调试·无摄像头");
     $("note").textContent = "无摄像头可按 F/J 调试：F=左手冲拳，J=右手膀手；也可用触控演示。";
     showBanner("调试开课 · F/J", 1400);
     beginRound();
@@ -1745,12 +1780,12 @@ async function start() {
   const okCam = await ensureCamera();
   if (!okCam && mode === "contest") {
     showBanner("比赛专用需摄像头，请先点「开启摄像头」", 2000);
-    $("camStatus").textContent = "待开启";
+    setCamStatus("待开启");
     return;
   }
   if (mode === "drill") {
     $("btnStrike").disabled = false;
-    $("camStatus").textContent = "请双手入镜";
+    setCamStatus("请双手入镜");
     $("note").textContent = "双手同时入镜后开课。无摄像头可按 F/J 调试。";
     showBanner("请双手入镜", 1600);
     setRoundPhase(ROUND_PHASE.WAITING_FOR_BOTH);
@@ -1759,7 +1794,7 @@ async function start() {
   catch (e) {
     const msg = (e && (e.message || String(e))) || "未知错误";
     if (!poseLandmarker) {
-      $("camStatus").textContent = "模型失败";
+      setCamStatus("模型失败");
       $("note").textContent = "姿态模型加载失败：" + msg + "。日课可按 F/J 或触控演示；可点「重试模型」。";
     }
     console.error(e);
@@ -1773,7 +1808,7 @@ async function start() {
     } catch (err) { console.warn(err); }
   }
   if (mode === "drill") {
-    $("camStatus").textContent = "请双手入镜";
+    setCamStatus("请双手入镜");
     $("note").textContent = okCam && handLandmarker
       ? "双手同时入镜后开课。触控演示／F／J 可不经双手门。"
       : "双手入镜后开课；也可关摄像头用 F/J 调试。";
@@ -1847,11 +1882,14 @@ window.addEventListener("keydown", (e) => {
   } else if (k === "j") {
     e.preventDefault();
     tryKeyDrive("bridge");
+  } else if (k === "d") {
+    e.preventDefault();
+    setDebugMode(!debugMode);
   }
 });
 
 resetIdle();
-$("camStatus").textContent = "待开启 · 日课可直接开始";
+setCamStatus("待开启 · 日课可直接开始");
 $("note").textContent = secureHint() || "日课可直接开始（F=冲／J=膀）；开摄像头后须双手入镜（HTTPS／localhost）";
 
 $("btnRetryModel") && ($("btnRetryModel").onclick = () => {
@@ -1880,7 +1918,7 @@ predictLoop();
   } catch (e) {
     console.error(e);
     const msg = (e && (e.message || String(e))) || "未知错误";
-    $("camStatus").textContent = "模型失败";
+    setCamStatus("模型失败");
     $("note").textContent = "姿态模型预加载失败：" + msg + "。日课可用触控；可点「重试模型」或确认 mediapipe/ 同目录。";
   }
 })();
