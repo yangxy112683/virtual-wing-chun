@@ -659,18 +659,28 @@ const MOVES = {
   },
 };
 
+const ROUND_PHASE = Object.freeze({
+  IDLE: "idle",
+  WAITING_FOR_BOTH: "waiting_for_both",
+  ACTIVE: "active",
+  FINISHED: "finished",
+});
+
+const ROUND_NEXT = Object.freeze({
+  [ROUND_PHASE.IDLE]: [ROUND_PHASE.WAITING_FOR_BOTH, ROUND_PHASE.ACTIVE],
+  [ROUND_PHASE.WAITING_FOR_BOTH]: [ROUND_PHASE.ACTIVE, ROUND_PHASE.IDLE],
+  [ROUND_PHASE.ACTIVE]: [ROUND_PHASE.FINISHED, ROUND_PHASE.IDLE],
+  [ROUND_PHASE.FINISHED]: [ROUND_PHASE.IDLE],
+});
+
 let mode = "drill"; // drill | contest
 let step = 0;
-let running = false;
 let left = TIME_LIMIT;
 let endAt = 0;
-let paused = false;
 let posePaused = false;
-let handGatePaused = false;
 let pauseAnchor = 0;
-let awaitBoth = false;
-let handFollow = false;
 let raf = 0;
+let roundPhase = ROUND_PHASE.IDLE;
 let lastHitAt = 0;
 let lastWrongAt = 0;
 let holdShape = null;
@@ -715,9 +725,9 @@ function armVisible(arm) {
   return vis >= 0.4;
 }
 
-function inFrame(lm, arm) {
-  // Soft margins — only shoulders+elbow must stay in; wrist tip may clip
-  const core = [lm[11], lm[12], arm.sh, arm.el].filter(Boolean);
+function inFrame(arm) {
+  // 空着的那侧肩可以出画。这里只看正在判的肩和肘，腕可以略出画面。
+  const core = [arm.sh, arm.el].filter(Boolean);
   const soft = [arm.wr].filter(Boolean);
   const coreOk = core.every((p) => p.x > 0.01 && p.x < 0.99 && p.y > 0.01 && p.y < 0.99);
   const softOk = soft.every((p) => p.x > -0.05 && p.x < 1.05 && p.y > -0.08 && p.y < 1.05);
@@ -769,7 +779,7 @@ function scoreToCandidate(shape, side, score, dy) {
 }
 
 function classifyArm(lm, arm, spec) {
-  if (!inFrame(lm, arm)) return { detail: spec.label + "出画" };
+  if (!inFrame(arm)) return { detail: spec.label + "出画" };
   const s = armScores(arm);
   if (s.weak) return { detail: s.weak };
   if (s.upScore < 0.2 && s.downScore < 0.2) return { detail: spec.label + "方向不明" };
@@ -785,51 +795,34 @@ function classifyArm(lm, arm, spec) {
   return { detail: spec.label + "弱特征" };
 }
 
-/** 左臂只判冲，右臂只判膀；带 side 供手模与小窗 */
-function classifyPose(lm) {
+function lostCandidate(detail) {
+  return { shape: "unknown", quality: "lost", confidence: 0, detail, side: null };
+}
+
+function nearCandidate(detail, side) {
+  return { shape: "unknown", quality: "near", confidence: 0.2, detail, side: side || null };
+}
+
+/** 有招式时只读 move.side：日字冲拳左臂，膀手右臂 */
+function classifyPose(lm, move) {
   const left = armOf(lm, "L");
   const right = armOf(lm, "R");
-  const leftOk = armVisible(left);
-  const rightOk = armVisible(right);
-  if (!leftOk && !rightOk) {
-    return { shape: "unknown", quality: "lost", confidence: 0, detail: "无人", side: null };
-  }
+  const leftVisible = armVisible(left);
+  const rightVisible = armVisible(right);
+  if (!leftVisible && !rightVisible) return lostCandidate("无人");
+  if (!move) return nearCandidate("待开课");
 
-  let straight = null;
-  let bridge = null;
-  let nearDetail = null;
-  if (leftOk) {
-    const found = classifyArm(lm, left, { side: "L", shape: "straight", score: "up", label: "左臂" });
-    straight = found.candidate || null;
-    nearDetail = nearDetail || found.detail || null;
-  }
-  if (rightOk) {
-    const found = classifyArm(lm, right, { side: "R", shape: "bridge", score: "down", label: "右臂" });
-    bridge = found.candidate || null;
-    nearDetail = nearDetail || found.detail || null;
-  }
+  const arm = move.side === "L" ? left : right;
+  const label = move.side === "L" ? "左臂" : "右臂";
+  if (!armVisible(arm) || !inFrame(arm)) return nearCandidate(label + "出画", move.side);
 
-  const needShape = running && step < SEQ.length ? required().shape : null;
-  if (needShape === "straight" && straight) return straight;
-  if (needShape === "bridge" && bridge) return bridge;
-  if (straight && !bridge) return straight;
-  if (bridge && !straight) return bridge;
-  if (straight && bridge) {
-    return straight.confidence >= bridge.confidence ? straight : bridge;
-  }
-  if (!leftOk && !rightOk) {
-    return { shape: "unknown", quality: "lost", confidence: 0, detail: "无人", side: null };
-  }
-  if (leftOk && !inFrame(lm, left) && rightOk && !inFrame(lm, right)) {
-    return { shape: "unknown", quality: "lost", confidence: 0, detail: "出画", side: null };
-  }
-  return {
-    shape: "unknown",
-    quality: "near",
-    confidence: 0.2,
-    detail: nearDetail || "弱特征",
-    side: null,
-  };
+  const found = classifyArm(lm, arm, {
+    side: move.side,
+    shape: move.shape,
+    score: move.shape === "straight" ? "up" : "down",
+    label,
+  });
+  return found.candidate || nearCandidate(found.detail || label + "弱特征", move.side);
 }
 
 function buildSeqUI() {
@@ -866,7 +859,7 @@ function setModeUI() {
   $("btnMode").textContent = c ? "比赛" : "日课";
   $("btnStrike").classList.toggle("hidden", c);
   if (c) $("btnStrike").disabled = true;
-  else if (running) $("btnStrike").disabled = false;
+  else if (roundPhase === ROUND_PHASE.ACTIVE) $("btnStrike").disabled = false;
 }
 
 function showBanner(text, ms = 900) {
@@ -877,50 +870,44 @@ function showBanner(text, ms = 900) {
   showBanner._t = setTimeout(() => b.classList.remove("show"), ms);
 }
 
-function pauseActive() {
-  return posePaused || handGatePaused;
-}
-
-function notePauseEdge(was) {
-  const nowOn = pauseActive();
-  if (nowOn && !was) pauseAnchor = performance.now();
-  if (!nowOn && was && running) endAt += performance.now() - pauseAnchor;
-  paused = nowOn;
+function setRoundPhase(next) {
+  if (next === roundPhase) return;
+  if (ROUND_NEXT[roundPhase].indexOf(next) < 0) return;
+  roundPhase = next;
+  if (next === ROUND_PHASE.IDLE || next === ROUND_PHASE.WAITING_FOR_BOTH || next === ROUND_PHASE.FINISHED) {
+    cancelAnimationFrame(raf);
+    raf = 0;
+  }
+  if (next === ROUND_PHASE.IDLE) {
+    posePaused = false;
+    $("camWrap").classList.remove("lost");
+  } else if (next === ROUND_PHASE.ACTIVE) {
+    endAt = performance.now() + left * 1000;
+    if (mode !== "contest") $("btnStrike").disabled = false;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
+  } else if (next === ROUND_PHASE.FINISHED) {
+    $("btnStrike").disabled = true;
+  }
 }
 
 function setPaused(on) {
   if (on === posePaused) return;
-  const was = pauseActive();
   posePaused = on;
   if (on) {
+    pauseAnchor = performance.now();
     $("camWrap").classList.add("lost");
     showBanner("回到框内", 1200);
-  } else if (!handGatePaused) {
-    $("camWrap").classList.remove("lost");
+    return;
   }
-  notePauseEdge(was);
-}
-
-function setHandGatePause(on) {
-  if (on === handGatePaused) return;
-  const was = pauseActive();
-  handGatePaused = on;
-  if (!on && !posePaused) $("camWrap").classList.remove("lost");
-  notePauseEdge(was);
-  if (on) {
-    holdShape = null;
-    holdCount = 0;
-    holdAccum = 0;
-    holdLastTs = 0;
-    setHoldUI(false);
-  }
+  if (roundPhase === ROUND_PHASE.ACTIVE) endAt += performance.now() - pauseAnchor;
+  $("camWrap").classList.remove("lost");
 }
 
 function resetIdle() {
-  step = 0; left = TIME_LIMIT; running = false; lastHitAt = 0; lastWrongAt = 0;
+  step = 0; left = TIME_LIMIT; lastHitAt = 0; lastWrongAt = 0;
   holdShape = null; holdCount = 0; holdAccum = 0; holdLastTs = 0;
-  posePaused = false; handGatePaused = false; paused = false;
-  awaitBoth = false; handFollow = false;
+  posePaused = false;
   if (typeof handViewState !== "undefined" && handViewState.reset) handViewState.reset();
   setHoldUI(false);
   $("count").textContent = "0 / 10 · 识别：—";
@@ -934,14 +921,16 @@ function resetIdle() {
     ? "点开始；双手入镜后开课。无摄像头可按 F/J 调试。"
     : "日课可直接开始（无摄像头按 F/J 调试）；开摄像头后须双手入镜。";
   cancelAnimationFrame(raf);
+  raf = 0;
   $("camWrap").classList.remove("lost");
+  setRoundPhase(ROUND_PHASE.IDLE);
   applyStepVisual();
   setModeUI();
 }
 
 function tick() {
-  if (!running) return;
-  if (!paused) {
+  if (roundPhase !== ROUND_PHASE.ACTIVE) return;
+  if (!posePaused) {
     left = Math.max(0, (endAt - performance.now()) / 1000);
   }
   $("timerText").textContent = Math.ceil(left);
@@ -1046,7 +1035,7 @@ async function initPose() {
             console.log("pose ok", { wasm, model, delegate });
             visionSession = { vision, delegate };
             $("camStatus").textContent = camReady ? "识别待命" : "模型就绪·请开摄像头";
-            if (!running) $("note").textContent = "姿态已就绪，正在加载手模。日课与触控演示可用。";
+            if (roundPhase === ROUND_PHASE.IDLE) $("note").textContent = "姿态已就绪，正在加载手模。日课与触控演示可用。";
             kickHand(vision, delegate);
             return poseLandmarker;
           } catch (e) {
@@ -1065,7 +1054,6 @@ async function initPose() {
   return poseLoading;
 }
 
-const PRESENT_MISS_GRACE_MS = 160;
 const PUSH_SMOOTH_MS = 90;
 const PULSE_PUSH_MS = 180;
 const PULSE_HOLD_MS = 150;
@@ -1075,12 +1063,6 @@ function nextSyncTs(now) {
   const ts = now <= lastSyncTs ? lastSyncTs + 0.001 : now;
   lastSyncTs = ts;
   return ts;
-}
-
-function shapeToPresent(shape) {
-  if (shape === "straight") return "punch_drive";
-  if (shape === "bridge") return "bong_bridge";
-  return "guard";
 }
 
 const skinImg = { Left: new Image(), Right: new Image() };
@@ -1120,9 +1102,29 @@ function bindWristU(img, side) {
 bindWristU(skinImg.Left, "Left");
 bindWristU(skinImg.Right, "Right");
 
-function splitHands(packets) {
-  const list = packets || [];
+function detectHandPackets(video, syncTs) {
+  try {
+    const handResult = handLandmarker.detectForVideo(video, syncTs);
+    const marks = (handResult && handResult.landmarks) || [];
+    const handed = (handResult && handResult.handedness) || [];
+    return marks.map((lm, i) => {
+      const cat = handed[i] && handed[i][0];
+      const name = cat && (cat.categoryName || cat.displayName || "");
+      return {
+        lm,
+        side: name === "Left" || name === "Right" ? name : "",
+        score: cat && cat.score ? cat.score : 0,
+      };
+    });
+  } catch (err) {
+    console.warn("hand frame", err);
+    return [];
+  }
+}
+
+function findBothHands(packets) {
   const ranked = [];
+  const list = packets || [];
   for (let i = 0; i < list.length; i++) {
     const item = list[i];
     if (!item || !item.lm || !item.lm[0] || item.lm[0].x == null) continue;
@@ -1130,33 +1132,13 @@ function splitHands(packets) {
   }
   ranked.sort((a, b) => (b.score || 0) - (a.score || 0));
   const top = ranked.slice(0, 2);
-  let left = null;
-  let right = null;
-  if (top.length >= 2) {
-    top.sort((a, b) => a.lm[0].x - b.lm[0].x);
-    // Unmirrored selfie frame: smaller x is the person's right hand.
-    right = { lm: top[0].lm, side: "Right", score: top[0].score || 0 };
-    left = { lm: top[1].lm, side: "Left", score: top[1].score || 0 };
-  } else if (top.length === 1) {
-    const item = top[0];
-    if (item.side === "Left") left = item;
-    else right = item;
-  }
-  let presence = "need_both";
-  if (left && right) presence = "both";
-  else if (left) presence = "miss_right";
-  else if (right) presence = "miss_left";
-  return { presence, left, right };
-}
-
-function handGateLabel(action, presence, seenBoth, promptBoth) {
-  if (presence === "miss_left" || presence === "miss_right") return "请双手入镜";
-  if (presence === "need_both" && (promptBoth || seenBoth)) {
-    if (seenBoth && action === "lost") return "手模丢失，回到框内";
-    return "请双手入镜";
-  }
-  if (action === "lost" && seenBoth) return "手模丢失，回到框内";
-  return "";
+  if (top.length < 2) return null;
+  top.sort((a, b) => a.lm[0].x - b.lm[0].x);
+  // Unmirrored selfie frame: smaller x is the person's right hand.
+  return {
+    right: { lm: top[0].lm, side: "Right", score: top[0].score || 0 },
+    left: { lm: top[1].lm, side: "Left", score: top[1].score || 0 },
+  };
 }
 
 const LANDSCAPE_MQ = "(orientation: landscape) and (min-width: 1000px)";
@@ -1284,11 +1266,6 @@ function drawSkinHand(ctx, img, at, h, alpha) {
 
 function createHandViewState() {
   let present = "guard";
-  let presence = "idle";
-  let seenBoth = false;
-  let promptBoth = false;
-  let tracking = false;
-  let missingSince = 0;
   let hold01 = 0;
   let pushL = 0;
   let pushR = 0;
@@ -1326,21 +1303,9 @@ function createHandViewState() {
     return "";
   }
 
-  function shouldDrawHands() {
-    if (!camReady) return true;
-    if (presence === "both") return true;
-    if (seenBoth && missingSince && (performance.now() - missingSince) < PRESENT_MISS_GRACE_MS) return true;
-    return false;
-  }
-
   return {
     reset() {
       present = "guard";
-      presence = "idle";
-      seenBoth = false;
-      promptBoth = false;
-      tracking = false;
-      missingSince = 0;
       hold01 = 0;
       pushL = 0;
       pushR = 0;
@@ -1350,10 +1315,6 @@ function createHandViewState() {
       pulseR = null;
       lastSmoothAt = 0;
       tagSide = null;
-    },
-    setPrompt(on) {
-      promptBoth = !!on;
-      if (promptBoth && presence === "idle") presence = "need_both";
     },
     pulse(side) {
       const now = performance.now();
@@ -1390,40 +1351,11 @@ function createHandViewState() {
         present = "guard";
       }
     },
-    sync(shape, packets, now) {
-      const split = splitHands(packets);
-      if (split.presence === "both") {
-        const action = shapeToPresent(shape);
-        seenBoth = true;
-        tracking = true;
-        missingSince = 0;
-        presence = "both";
-        present = action;
-        return { presence: "both", action, holdOff: false };
-      }
-      if (tracking) {
-        tracking = false;
-        missingSince = now;
-      }
-      const inGrace = seenBoth && missingSince && (now - missingSince) < PRESENT_MISS_GRACE_MS;
-      if (inGrace) {
-        return { presence: "both", action: present, holdOff: false };
-      }
-      presence = split.presence;
-      present = seenBoth ? "lost" : "guard";
-      targetL = 0;
-      targetR = 0;
-      return { presence, action: present, holdOff: !!seenBoth };
-    },
     onHitOk() {},
     onHoldProgress(p) {
       hold01 = p > 0 ? Math.min(1, p) : 0;
     },
     paint(ctx, w, h) {
-      if (!shouldDrawHands()) {
-        lastSmoothAt = 0;
-        return;
-      }
       const now = performance.now();
       let t = 1;
       if (lastSmoothAt) {
@@ -1441,20 +1373,19 @@ function createHandViewState() {
       drawSkinHand(ctx, skinImg.Left, laneHand("Left", pushL, w, h), h, alpha);
       drawSkinHand(ctx, skinImg.Right, laneHand("Right", pushR, w, h), h, alpha);
     },
-    paintStage() {
+    paintStage(visible) {
       const canvas = $("handCanvas");
       const tag = $("handTag");
       const host = $("handOverlay");
-      const shown = presence === "both" ? present : (presence === "idle" || !camReady ? "guard" : presence);
       if (host) {
-        host.dataset.present = shown;
-        host.dataset.hands = !camReady ? "both" : presence;
+        host.dataset.present = visible ? present : "need_both";
+        host.dataset.hands = visible ? "both" : "need_both";
       }
       if (tag) {
-        const gate = camReady ? handGateLabel(present, presence, seenBoth, promptBoth) : "";
-        const move = (!gate && (pushL > 0.08 || pushR > 0.08 || tagSide)) ? moveTagText() : "";
-        const text = gate || move;
-        const cls = "hand-tag" + (text === "请双手入镜" ? " need" : text === "手模丢失，回到框内" ? " lost" : "");
+        const text = !visible && camReady
+          ? "请双手入镜"
+          : (visible && (pushL > 0.08 || pushR > 0.08 || tagSide) ? moveTagText() : "");
+        const cls = "hand-tag" + (text === "请双手入镜" ? " need" : "");
         if (tag.textContent !== text) tag.textContent = text;
         if (tag.className !== cls) tag.className = cls;
         tag.hidden = !text;
@@ -1473,7 +1404,7 @@ function createHandViewState() {
       }
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, w, hgt);
-      this.paint(ctx, w, hgt);
+      if (visible) this.paint(ctx, w, hgt);
     },
   };
 }
@@ -1482,14 +1413,14 @@ const handViewState = createHandViewState();
 
 function kickHand(vision, delegate) {
   initHand(vision, delegate).then((ok) => {
-    if (awaitBoth && !running) {
+    if (roundPhase === ROUND_PHASE.WAITING_FOR_BOTH) {
       $("camStatus").textContent = "请双手入镜";
       $("note").textContent = ok && camReady
         ? "双手同时入镜后开课。无摄像头可按 F/J 调试。"
         : "开摄像头后须双手入镜；也可无摄像头按 F/J 调试。";
       return;
     }
-    if (running) return;
+    if (roundPhase === ROUND_PHASE.ACTIVE) return;
     $("note").textContent = ok
       ? "姿态与手模已就绪（" + delegate + "）。日课可直接开始；开摄像头后须双手入镜。"
       : "姿态已就绪，手模未加载。日课可按 F/J 或触控演示。";
@@ -1573,8 +1504,7 @@ function flash(ok) {
   }, ok ? 200 : (cur.sil === "bong" ? 140 : 90));
 }
 
-function onHitValid(fromTouch) {
-  if (handGatePaused && !fromTouch) return;
+function onHitValid() {
   const now = performance.now();
   if (now - lastHitAt < POST_HIT_COOLDOWN) return;
   lastHitAt = now;
@@ -1627,6 +1557,7 @@ function setHoldUI(on, sil, sec, pct) {
 }
 
 function applyCandidate(c) {
+  if (roundPhase !== ROUND_PHASE.ACTIVE) return;
   const now = performance.now();
   const label = c.shape + (c.detail ? ` ${c.detail}` : "");
   $("count").textContent = `${step} / 10 · 识别：${c.shape}/${c.quality}`;
@@ -1638,7 +1569,7 @@ function applyCandidate(c) {
     holdAccum = 0;
     holdLastTs = 0;
     if (lostStreak >= LOST_FRAMES) {
-      if (running) setPaused(true);
+      setPaused(true);
       $("camStatus").textContent = "回到框内";
     } else {
       $("camStatus").textContent = "识别中…";
@@ -1646,20 +1577,10 @@ function applyCandidate(c) {
     return;
   }
   lostStreak = 0;
-  if (paused) setPaused(false);
+  if (posePaused) setPaused(false);
 
-  if (!running || step >= 10) {
+  if (step >= 10) {
     $("camStatus").textContent = label;
-    return;
-  }
-
-  if (handGatePaused) {
-    holdShape = null;
-    holdCount = 0;
-    holdAccum = 0;
-    holdLastTs = 0;
-    setHoldUI(false);
-    $("camStatus").textContent = "请双手入镜";
     return;
   }
 
@@ -1736,11 +1657,6 @@ function applyCandidate(c) {
 }
 
 
-function poseTooLow(lm) {
-  const dropped = (p) => !p || (typeof p.visibility === "number" && p.visibility < 0.5) || p.y > 0.8;
-  return dropped(lm && lm[11]) && dropped(lm && lm[12]);
-}
-
 function predictLoop() {
   try {
     const video = $("video");
@@ -1748,61 +1664,21 @@ function predictLoop() {
       lastVideoTime = video.currentTime;
       const syncTs = nextSyncTs(performance.now());
       const result = poseLandmarker.detectForVideo(video, syncTs);
-      let handPoints = null;
-      if (handLandmarker) {
-        try {
-          const handResult = handLandmarker.detectForVideo(video, syncTs);
-          const marks = (handResult && handResult.landmarks) || [];
-          const handed = (handResult && handResult.handedness) || [];
-          handPoints = marks.map((lm, i) => {
-            const cat = handed[i] && handed[i][0];
-            const name = cat && (cat.categoryName || cat.displayName || "");
-            return {
-              lm,
-              side: name === "Left" || name === "Right" ? name : "",
-              score: cat && cat.score ? cat.score : 0,
-            };
-          });
-        } catch (err) {
-          console.warn("hand frame", err);
-          handPoints = [];
-        }
-      }
       const lm = result && result.landmarks && result.landmarks[0];
-      const candidate = lm
-        ? classifyPose(lm)
-        : { shape: "unknown", quality: "lost", confidence: 0, detail: "无人" };
-      if (handPoints) {
-        const view = handViewState.sync(candidate.shape, handPoints, syncTs);
-        if (awaitBoth && !running && view.presence === "both") {
-          awaitBoth = false;
-          handFollow = true;
-          beginRound();
-        }
-        if (handFollow && running) setHandGatePause(!!view.holdOff);
+      let handPackets = null;
+      if (roundPhase === ROUND_PHASE.WAITING_FOR_BOTH && handLandmarker) {
+        handPackets = detectHandPackets(video, syncTs);
+        if (findBothHands(handPackets)) beginRound();
       }
-      if (camReady && running && !handGatePaused) {
+      const move = roundPhase === ROUND_PHASE.ACTIVE && step < SEQ.length ? required() : null;
+      const candidate = lm ? classifyPose(lm, move) : lostCandidate("无人");
+      if (roundPhase === ROUND_PHASE.ACTIVE) {
         handViewState.setPoseDrive(candidate.side, candidate.shape, candidate.quality);
-      } else if (camReady) {
-        handViewState.setPoseDrive(null, null, null);
+        applyCandidate(candidate);
       }
-      if (lm || running) applyCandidate(candidate);
-      if (awaitBoth || handGatePaused) {
-        if (handPoints) {
-          let seen = 0;
-          for (let i = 0; i < handPoints.length; i++) {
-            const wpt = handPoints[i] && handPoints[i].lm && handPoints[i].lm[0];
-            if (wpt && wpt.x != null) seen += 1;
-          }
-          const low = !!result && poseTooLow(result.landmarks && result.landmarks[0]);
-          $("camStatus").textContent = low
-            ? "人偏下：屏幕前倾或坐远一点"
-            : ("检出 " + seen + "/2 只手");
-        } else if (awaitBoth && !running) {
-          $("camStatus").textContent = "请双手入镜";
-        }
-      }
-      handViewState.onHoldProgress(running && holdAccum > 0 ? holdAccum / HOLD_PASS_MS : 0);
+      handViewState.onHoldProgress(
+        roundPhase === ROUND_PHASE.ACTIVE && holdAccum > 0 ? holdAccum / HOLD_PASS_MS : 0
+      );
 
       const canvas = $("overlayCanvas");
       const ctx = canvas.getContext("2d");
@@ -1827,10 +1703,10 @@ function predictLoop() {
           ctx.stroke();
         }
       }
-      if (handPoints) {
+      if (handPackets && roundPhase === ROUND_PHASE.WAITING_FOR_BOTH) {
         ctx.fillStyle = "#3aa0c8";
-        for (let i = 0; i < handPoints.length; i++) {
-          const wpt = handPoints[i] && handPoints[i].lm && handPoints[i].lm[0];
+        for (let i = 0; i < handPackets.length; i++) {
+          const wpt = handPackets[i] && handPackets[i].lm && handPackets[i].lm[0];
           if (!wpt || wpt.x == null || wpt.y == null) continue;
           ctx.beginPath();
           ctx.arc(wpt.x * canvas.width, wpt.y * canvas.height, 4, 0, Math.PI * 2);
@@ -1841,27 +1717,25 @@ function predictLoop() {
   } catch (err) {
     console.error(err);
   }
-  try { handViewState.paintStage(); } catch (err) { console.error(err); }
+  try {
+    handViewState.paintStage(roundPhase !== ROUND_PHASE.WAITING_FOR_BOTH);
+  } catch (err) {
+    console.error(err);
+  }
   requestAnimationFrame(predictLoop);
 }
 
 function beginRound() {
-  if (running) return;
-  running = true;
-  if (mode !== "contest") $("btnStrike").disabled = false;
-  endAt = performance.now() + left * 1000;
+  if (roundPhase === ROUND_PHASE.ACTIVE) return;
+  setRoundPhase(ROUND_PHASE.ACTIVE);
+  if (roundPhase !== ROUND_PHASE.ACTIVE) return;
   $("instr").textContent = "交错击桩 · 听指示换招。1 分钟内按序有效击 10 次；维持 3 秒或瞬时有效均可过；击后冷却 2 秒。";
   applyStepVisual();
-  cancelAnimationFrame(raf);
-  raf = requestAnimationFrame(tick);
 }
 
 async function start() {
   resetIdle();
   if (mode === "drill" && !camReady) {
-    awaitBoth = false;
-    handFollow = false;
-    handViewState.setPrompt(false);
     $("btnStrike").disabled = false;
     $("camStatus").textContent = "调试·无摄像头";
     $("note").textContent = "无摄像头可按 F/J 调试：F=左手冲拳，J=右手膀手；也可用触控演示。";
@@ -1877,13 +1751,11 @@ async function start() {
     return;
   }
   if (mode === "drill") {
-    awaitBoth = true;
-    handFollow = false;
-    handViewState.setPrompt(true);
     $("btnStrike").disabled = false;
     $("camStatus").textContent = "请双手入镜";
     $("note").textContent = "双手同时入镜后开课。无摄像头可按 F/J 调试。";
     showBanner("请双手入镜", 1600);
+    setRoundPhase(ROUND_PHASE.WAITING_FOR_BOTH);
   }
   try { await initPose(); }
   catch (e) {
@@ -1913,12 +1785,7 @@ async function start() {
 }
 
 function finish(pass) {
-  running = false;
-  awaitBoth = false;
-  handFollow = false;
-  $("btnStrike").disabled = true;
-  cancelAnimationFrame(raf);
-  setHandGatePause(false);
+  setRoundPhase(ROUND_PHASE.FINISHED);
   setPaused(false);
   $("hud").classList.remove("urgent");
   $("armRU").classList.remove("target-punch", "target-bong");
@@ -1938,29 +1805,21 @@ function pulseMoveSide(shape) {
   if (side) handViewState.pulse(side);
 }
 
-function openDrillWithoutCamera() {
-  awaitBoth = false;
-  handFollow = false;
-  setHandGatePause(false);
-  handViewState.setPrompt(false);
-  beginRound();
-}
-
 function tryKeyDrive(shape) {
   if (mode === "contest" || step >= 10) return;
   if ($("overlay").classList.contains("show")) return;
   pulseMoveSide(shape);
-  if (!running) openDrillWithoutCamera();
+  if (roundPhase !== ROUND_PHASE.ACTIVE) beginRound();
   const need = required();
-  if (shape === need.shape) onHitValid(true);
+  if (shape === need.shape) onHitValid();
   else onHitWrong("须出" + need.name);
 }
 
 function tryTapFallback() {
   if (mode === "contest" || step >= 10) return;
-  if (!running) openDrillWithoutCamera();
+  if (roundPhase !== ROUND_PHASE.ACTIVE) beginRound();
   pulseMoveSide(required().shape);
-  onHitValid(true);
+  onHitValid();
 }
 
 $("btnMode").onclick = () => {
