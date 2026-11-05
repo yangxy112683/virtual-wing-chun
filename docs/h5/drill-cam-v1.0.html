@@ -93,6 +93,17 @@
   .seq span.cur.bong { background: rgba(58,160,200,0.35); color: #fff; border-color: var(--glow2); }
 
   .stage { position: absolute; inset: 0; }
+  /* 木桩实拍图层：铺在舞台最底层，四边渐隐到现有深色底 */
+  .scene {
+    position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  }
+  .scene-img {
+    position: absolute; left: 0; top: 0;
+    opacity: 0; transition: opacity 0.3s linear;
+    -webkit-mask-image: radial-gradient(ellipse 76% 84% at 50% 50%, #000 62%, rgba(0,0,0,0.72) 84%, transparent 100%);
+    mask-image: radial-gradient(ellipse 76% 84% at 50% 50%, #000 62%, rgba(0,0,0,0.72) 84%, transparent 100%);
+  }
+  .scene-img.ready { opacity: 1; }
   .dummy {
     position: absolute;
     left: 16%;
@@ -102,43 +113,72 @@
     top: max(188px, calc(46% - 38cqmin));
     z-index: auto;
   }
-  .pole {
-    position: absolute; left: 50%; top: 0; bottom: 2%; width: 34%;
-    transform: translateX(-50%);
-    border-radius: 28px;
-    z-index: 2;
-    background: linear-gradient(90deg, #2a1812 0%, #6b4634 32%, #b18464 48%, #5a3828 68%, #24160f 100%);
+  /* CSS 木桩外观已由实拍图取代；.dummy 只剩几何盒子，用来定位和缩放 .scene 图 */
+  .pole, .leg, .arm.lu { display: none; }
+  .arm, .leg { position: absolute; border-radius: 999px; z-index: 2; }
+
+  /* 靶区：透明热区，按木桩照片的百分比贴到右上桩手与中桩手上 */
+  .zones {
+    position: absolute; inset: 0; z-index: 9; pointer-events: none; overflow: visible;
   }
-  .arm, .leg {
-    position: absolute; border-radius: 999px; z-index: 2;
-    background: linear-gradient(180deg, #8d6248, #3a241c 70%);
+  .arm.ru, .arm.mid {
+    position: absolute; transform: none; border-radius: 999px;
   }
-  .arm.lu { width: 40%; height: 12%; left: 2%; top: 36%; transform: rotate(14deg); }
-  .arm.ru { width: 46%; height: 13%; left: 44%; top: 8%; transform: rotate(-11deg); }
-  .arm.mid { width: 44%; height: 13%; left: 48%; top: 42%; transform: rotate(-7deg); }
-  .leg { width: 12%; height: 26%; left: 58%; top: 72%; transform: rotate(18deg); transform-origin: top center; }
-  .arm.target-punch, .arm.target-bong { z-index: 9; }
+  .hit-pt {
+    position: absolute; left: 50%; top: 50%;
+    width: 2px; height: 2px;
+    margin: -1px 0 0 -1px; border-radius: 50%;
+  }
+  .arm.target-punch, .arm.target-bong {
+    background: radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.06), transparent 70%);
+    border-radius: 999px;
+  }
   .arm.target-punch {
     color: var(--glow);
-    outline: 4px solid var(--glow);
+    outline: 3px solid var(--glow);
     box-shadow: 0 0 16px rgba(232,90,42,0.8);
     animation: blink 1s ease infinite;
   }
   .arm.target-bong {
     color: var(--glow2);
-    outline: 4px solid var(--glow2);
+    outline: 3px solid var(--glow2);
     box-shadow: 0 0 16px rgba(58,160,200,0.75);
     animation: blink2 1s ease infinite;
   }
-  .arm.target-punch::after, .arm.target-bong::after {
+  .arm.target-punch .hit-pt::after, .arm.target-bong .hit-pt::after {
     content: "";
-    position: absolute; right: 0; top: 50%;
-    height: 180%; aspect-ratio: 1;
-    transform: translate(42%, -50%);
+    position: absolute; left: 50%; top: 50%;
+    height: 760%; aspect-ratio: 1;
+    transform: translate(-50%, -50%);
     border-radius: 50%;
     border: 3px solid currentColor;
     box-shadow: 0 0 12px currentColor;
     pointer-events: none;
+  }
+  /* 受击高亮：自带描边与色值，不依赖 target-* 类，本击的靶臂在 step++ 之后仍会闪 */
+  .arm.hit {
+    color: rgba(255,214,170,0.95);
+    outline: 3px solid rgba(255,214,170,0.95);
+    box-shadow: 0 0 26px rgba(255,170,90,0.9);
+    filter: brightness(1.3);
+  }
+  .arm.hit .hit-pt::after {
+    content: "";
+    position: absolute; left: 50%; top: 50%;
+    height: 760%; aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 3px solid rgba(255,214,170,0.95);
+    box-shadow: 0 0 14px rgba(255,170,90,0.95);
+    pointer-events: none;
+  }
+  .arm.target-punch.hit {
+    background: radial-gradient(ellipse at 50% 50%, rgba(255,190,140,0.5), rgba(232,90,42,0.22) 60%, transparent 78%);
+    box-shadow: 0 0 26px rgba(232,90,42,0.95);
+  }
+  .arm.target-bong.hit {
+    background: radial-gradient(ellipse at 50% 50%, rgba(180,235,255,0.5), rgba(58,160,200,0.22) 60%, transparent 78%);
+    box-shadow: 0 0 26px rgba(58,160,200,0.95);
   }
   @container phone (max-height: 520px) {
     .dummy {
@@ -147,10 +187,35 @@
       top: 142px;
       height: calc(100% - 268px);
     }
+    /* 竖屏适配暂停：短屏（多为竖屏小窗口）原来还手写了靶区，现在靶区由 syncStageGeom 按
+     * DUMMY_ART 百分比定位，手写值会和照片错位。恢复竖屏时取消下面注释并按需调数值。
     .arm.ru { width: 42%; left: 52%; top: 16%; }
     .arm.mid { width: 40%; left: 50%; }
+    */
   }
-  .arm.hit { filter: brightness(1.35); }
+  /* 接触瞬间的冲击光圈 */
+  .impact {
+    position: absolute; z-index: 9; width: 8px; height: 8px; margin: -4px 0 0 -4px;
+    border-radius: 50%; pointer-events: none; opacity: 0;
+    border: 2px solid rgba(255, 214, 170, 0.95);
+    box-shadow: 0 0 14px rgba(255, 170, 90, 0.9);
+  }
+  .impact.fire { animation: impactRing 0.42s ease-out forwards; }
+  .impact.fire.cool {
+    border-color: rgba(150, 220, 255, 0.95);
+    box-shadow: 0 0 14px rgba(120, 200, 255, 0.9);
+  }
+  @keyframes impactRing {
+    0% { opacity: 0.95; transform: scale(1); }
+    100% { opacity: 0; transform: scale(9); }
+  }
+  .stage.shake { animation: stageShake 0.13s ease-out; }
+  @keyframes stageShake {
+    0% { transform: translate(0, 0); }
+    35% { transform: translate(-2.5px, 1.5px); }
+    70% { transform: translate(2px, -1.5px); }
+    100% { transform: translate(0, 0); }
+  }
   @keyframes blink { 50% { outline-color: rgba(232,90,42,0.2); } }
   @keyframes blink2 { 50% { outline-color: rgba(58,160,200,0.2); } }
 
@@ -227,15 +292,17 @@
   .sil.strike { filter: drop-shadow(0 0 6px rgba(62,207,122,0.85)); }
 
   .sfx {
-    position: absolute; left: 58%; top: 42%; transform: translate(-50%,-50%);
+    position: absolute;
+    left: var(--sfx-x, 58%); top: var(--sfx-y, 42%);
+    transform: translate(-50%,-50%);
     font-size: 22px; font-weight: 700; opacity: 0; pointer-events: none; z-index: 9;
-    text-shadow: 0 2px 8px #000;
+    text-shadow: 0 2px 8px #000; white-space: nowrap;
   }
   .sfx.show { animation: pop 0.4s ease forwards; }
   @keyframes pop {
-    0% { opacity: 0; transform: translate(-50%,-40%) scale(0.85); }
+    0% { opacity: 0; transform: translate(-50%,-45%) scale(0.85); }
     30% { opacity: 1; }
-    100% { opacity: 0; transform: translate(-50%,-75%) scale(1.1); }
+    100% { opacity: 0; transform: translate(-50%,-82%) scale(1.1); }
   }
   .flash { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
   .flash.ok { background: rgba(232,215,195,0.07); }
@@ -304,14 +371,16 @@
 
   .hand-overlay {
     position: absolute;
-    left: 0;
-    right: 0;
-    height: 30%;
-    bottom: calc(148px + env(safe-area-inset-bottom, 0px));
+    inset: 0;
     z-index: 1;
     pointer-events: none;
     overflow: hidden;
   }
+  /* 竖屏适配暂停：竖屏原本只给画布底部条带（靶臂下方），现在按整块舞台走。
+   * 恢复竖屏时把 .hand-overlay 的 `inset: 0` 换回：
+   *   left: 0; right: 0; height: 30%;
+   *   bottom: calc(148px + env(safe-area-inset-bottom, 0px));
+   */
   .hand-overlay canvas {
     position: absolute;
     inset: 0;
@@ -459,7 +528,8 @@
     .demo-hint { font-size: clamp(10px, 1.5vh, 15px); }
     .sil { flex: 1 1 auto; height: auto; min-height: 0; margin: 0; }
     .sfx {
-      left: 0; top: 22%; transform: translate(-108%, -50%);
+      left: var(--sfx-x, 58%); top: var(--sfx-y, 42%);
+      transform: translate(-100%, -50%);
       font-size: clamp(18px, 3vmin, 28px); z-index: 2;
     }
     .sfx.show { animation: popWide 0.4s ease forwards; }
@@ -500,9 +570,9 @@
     }
   }
   @keyframes popWide {
-    0% { opacity: 0; transform: translate(-108%, -28%) scale(0.85); }
-    30% { opacity: 1; transform: translate(-108%, -50%) scale(1); }
-    100% { opacity: 0; transform: translate(-108%, -92%) scale(1.08); }
+    0% { opacity: 0; transform: translate(-100%, -30%) scale(0.85); }
+    30% { opacity: 1; transform: translate(-100%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-100%, -88%) scale(1.08); }
   }
 </style>
 </head>
@@ -550,19 +620,21 @@
 
   <div class="stage-col">
     <div class="stage">
+      <div class="scene"><img class="scene-img" id="sceneImg" alt="" decoding="async" src="dummy-front.jpg" /></div>
       <div class="hand-overlay" id="handOverlay">
         <canvas id="handCanvas" aria-hidden="true"></canvas>
       </div>
       <div class="dummy">
         <div class="pole"></div>
         <div class="arm lu" id="armLU"></div>
-        <div class="arm ru" id="armRU"></div>
-        <div class="arm mid" id="armMid"></div>
         <div class="leg"></div>
       </div>
-      <div class="arm-side">
-        <div class="sfx" id="sfx"></div>
+      <div class="zones" id="zones">
+        <div class="arm ru" id="armRU"><span class="hit-pt"></span></div>
+        <div class="arm mid" id="armMid"><span class="hit-pt"></span></div>
       </div>
+      <div class="sfx" id="sfx"></div>
+      <div class="impact" id="impact"></div>
       <div class="hand-tag" id="handTag" hidden role="status"></div>
       <div class="flash" id="flash"></div>
       <div class="banner" id="banner"></div>
@@ -940,6 +1012,7 @@ function setPaused(on) {
 function resetIdle() {
   step = 0; left = TIME_LIMIT; lastHitAt = 0; lastWrongAt = 0;
   holdShape = null; holdCount = 0; holdAccum = 0; holdLastTs = 0;
+  pendingImpact = null;
   posePaused = false;
   if (typeof handViewState !== "undefined" && handViewState.reset) handViewState.reset();
   setHoldUI(false);
@@ -1088,6 +1161,7 @@ async function initPose() {
 }
 
 const PUSH_SMOOTH_MS = 90;
+const PUSH_ATTACK_MS = 20; // 出招（0→1）用更快的时间常数，让手在 260ms 兜底前落到靶上
 const PULSE_PUSH_MS = 180;
 const PULSE_HOLD_MS = 150;
 const PULSE_RECOVER_MS = 250;
@@ -1099,41 +1173,19 @@ function nextSyncTs(now) {
 }
 
 const skinImg = { Left: new Image(), Right: new Image() };
-const skinAnchorU = { Left: 0.5, Right: 0.5 };
+// 掌心接触点 + 前臂根部：由 tools/prepare_h5_assets.py 量出（归一化到各自贴图内）
+const HAND_ANCHOR = {
+  Left: { palmX: 0.7946, palmY: 0.2319, wristX: 0.7680, wristY: 0.3801, rootX: 0.3593, rootY: 0.9710 },
+  Right: { palmX: 0.2055, palmY: 0.2320, wristX: 0.2301, wristY: 0.3801, rootX: 0.6437, rootY: 0.9710 },
+};
+// 木桩实拍图里的靶臂端点（归一化到 dummy-front.jpg 整图）
+const DUMMY_ART = {
+  trunkX: 0.5150,
+  ru: { x: 0.6000, y: 0.2320 },
+  mid: { x: 0.5200, y: 0.4430 },
+};
 skinImg.Left.src = new URL("./hand-skin-L.png", import.meta.url).href;
 skinImg.Right.src = new URL("./hand-skin-R.png", import.meta.url).href;
-
-function measureWristU(img) {
-  const w = img.naturalWidth;
-  const h = img.naturalHeight;
-  if (!w || !h) return 0.5;
-  const sample = document.createElement("canvas");
-  sample.width = w;
-  sample.height = h;
-  const sctx = sample.getContext("2d", { willReadFrequently: true });
-  sctx.drawImage(img, 0, 0);
-  const data = sctx.getImageData(0, 0, w, h).data;
-  const y0 = Math.floor(h * 0.72);
-  const y1 = Math.min(h, Math.floor(h * 0.84));
-  let sum = 0;
-  let n = 0;
-  for (let y = y0; y < y1; y++) {
-    for (let x = 0; x < w; x++) {
-      if (data[(y * w + x) * 4 + 3] < 24) continue;
-      sum += x + 0.5;
-      n += 1;
-    }
-  }
-  return n ? sum / n / w : 0.5;
-}
-
-function bindWristU(img, side) {
-  const read = () => { skinAnchorU[side] = measureWristU(img); };
-  if (img.complete && img.naturalWidth) read();
-  else img.addEventListener("load", read, { once: true });
-}
-bindWristU(skinImg.Left, "Left");
-bindWristU(skinImg.Right, "Right");
 
 function detectHandPackets(video, syncTs) {
   try {
@@ -1176,41 +1228,120 @@ function findBothHands(packets) {
 
 const LANDSCAPE_MQ = "(orientation: landscape) and (min-width: 1000px)";
 const HAND_H_LAND = 0.47;
-const HAND_H_PORT = 0.9;
+// 木桩实拍图在舞台里的取景框（相对 .dummy 盒子），用来把图铺到原桩位
+const SCENE_FIT = { cx: DUMMY_ART.trunkX, top: 0.06, bottom: 0.985 };
 let stagePoleFrac = 0.5;
 let stageReachFrac = 0.18;
+let sceneBox = null; // { left, top, width, height } 舞台内坐标，单位 px
 
+function zoneEls() {
+  return { ru: $("armRU"), mid: $("armMid") };
+}
+
+/** 把 scene 图按 .dummy 盒子摆好，并把两个靶区贴到图上对应的桩手位置 */
 function syncStageGeom() {
   const stage = document.querySelector(".stage");
   if (!stage) return;
   const sr = stage.getBoundingClientRect();
+  if (sr.width < 2 || sr.height < 2) return;
+
   const raw = getComputedStyle(stage).getPropertyValue("--pole-x").trim();
+  const dummy = stage.querySelector(".dummy");
   const pole = stage.querySelector(".pole");
-  if (raw.endsWith("%")) stagePoleFrac = parseFloat(raw) / 100;
-  else if (pole && sr.width > 1) {
+  if (dummy && sr.width > 1) {
+    const dr = dummy.getBoundingClientRect();
+    stagePoleFrac = (dr.left + dr.width / 2 - sr.left) / sr.width;
+  } else if (raw.endsWith("%")) {
+    stagePoleFrac = parseFloat(raw) / 100;
+  } else if (pole && sr.width > 1) {
     const pr = pole.getBoundingClientRect();
     stagePoleFrac = (pr.left + pr.width / 2 - sr.left) / sr.width;
   }
-  if (sr.width < 2) return;
-  const mid = sr.left + sr.width * stagePoleFrac;
+
+  if (dummy) {
+    const dr = dummy.getBoundingClientRect();
+    const boxLeft = dr.left - sr.left;
+    const boxTop = dr.top - sr.top;
+    const boxW = dr.width;
+    const boxH = dr.height;
+    // 图里木桩的树干中线落在 .dummy 的水平中线上；桩顶对齐盒子顶、底座对齐盒子底
+    const imgW = boxH / ((SCENE_FIT.bottom - SCENE_FIT.top) * (1117 / 1728) / 1) * 0;
+    void imgW;
+    // 用「树干高度 = 盒子高度」来定图高，宽度按图片比例
+    const artH = (SCENE_FIT.bottom - SCENE_FIT.top); // 图内树干纵向占比
+    const imgH = boxH / artH;
+    const imgW2 = imgH * (1728 / 1117);
+    const left = boxLeft + boxW / 2 - DUMMY_ART.trunkX * imgW2;
+    const top = boxTop - SCENE_FIT.top * imgH;
+    sceneBox = { left, top, width: imgW2, height: imgH };
+  }
+
+  const img = $("sceneImg");
+  if (img && sceneBox) {
+    img.style.transform = `translate(${sceneBox.left}px, ${sceneBox.top}px)`;
+    img.style.width = `${sceneBox.width}px`;
+    img.style.height = `${sceneBox.height}px`;
+    if (!img.classList.contains("ready")) img.classList.add("ready");
+  }
+
+  const z = zoneEls();
+  if (sceneBox && z.ru && z.mid) {
+    // 靶区盒子：桩手端点周围一小块，边长随图缩放
+    const unit = sceneBox.width;
+    const rw = unit * 0.085;
+    const rh = unit * 0.085;
+    const place = (el, art) => {
+      const x = sceneBox.left + art.x * sceneBox.width;
+      const y = sceneBox.top + art.y * sceneBox.height;
+      el.style.left = `${x - rw / 2}px`;
+      el.style.top = `${y - rh / 2}px`;
+      el.style.width = `${rw}px`;
+      el.style.height = `${rh}px`;
+    };
+    place(z.ru, DUMMY_ART.ru);
+    place(z.mid, DUMMY_ART.mid);
+  }
+
   let reach = 0;
-  stage.querySelectorAll(".pole, .arm, .leg").forEach((el) => {
+  const poleMidX = sr.left + sr.width * stagePoleFrac;
+  // 只按两个靶区量臂展；.zones 是整块舞台，不能参与
+  const probe = [$("armRU"), $("armMid")];
+  probe.forEach((el) => {
+    if (!el) return;
     const r = el.getBoundingClientRect();
-    reach = Math.max(reach, mid - r.left, r.right - mid);
+    if (!r.width) return;
+    reach = Math.max(reach, poleMidX - r.left, r.right - poleMidX);
   });
   stageReachFrac = reach / sr.width;
 }
 
-function handExtents(dw, dh, u, tilt) {
+/** 靶区掌心锚点在画布坐标里的位置（canvas 像素） */
+function hitPointPx(armId, w, h) {
+  const el = $(armId);
+  const dot = el && el.querySelector(".hit-pt");
+  const canvas = $("handCanvas");
+  if (!dot || !canvas) return null;
+  const dr = dot.getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  if (cr.width < 2 || cr.height < 2) return null;
+  const sx = w / cr.width;
+  const sy = h / cr.height;
+  return {
+    x: (dr.left + dr.width / 2 - cr.left) * sx,
+    y: (dr.top + dr.height / 2 - cr.top) * sy,
+  };
+}
+
+function handExtents(dw, dh, u, v, tilt) {
   const c = Math.cos(tilt);
   const s = Math.sin(tilt);
   let minX = 0;
   let maxX = 0;
   const pts = [
-    [-dw * u, -dh * 0.78],
-    [dw * (1 - u), -dh * 0.78],
-    [-dw * u, dh * 0.22],
-    [dw * (1 - u), dh * 0.22],
+    [-dw * u, -dh * v],
+    [dw * (1 - u), -dh * v],
+    [-dw * u, dh * (1 - v)],
+    [dw * (1 - u), dh * (1 - v)],
   ];
   for (let i = 0; i < pts.length; i++) {
     const xr = pts[i][0] * c - pts[i][1] * s;
@@ -1220,81 +1351,235 @@ function handExtents(dw, dh, u, tilt) {
   return { minX, maxX };
 }
 
-/** 固定车道：左手在杆左、右手在杆右；push 0 护手、1 前推并缩小约 15% */
+/* 竖屏适配暂停
+ * 竖屏手模高度：以“靶臂下方剩余空间”为准（旧版画布只有底部条带，现在是整块舞台）
+ * 横屏定稿后再恢复：把下面两个函数取消注释，并在 laneHand 里恢复 landscape 分支。
+function chromeInsetPx(h) {
+  const stage = document.querySelector(".stage");
+  const chrome = document.querySelector(".bottom-chrome");
+  const canvas = $("handCanvas");
+  if (!stage || !chrome || !canvas) return 0;
+  const sr = stage.getBoundingClientRect();
+  const cr = chrome.getBoundingClientRect();
+  const vr = canvas.getBoundingClientRect();
+  if (vr.height < 2) return 0;
+  const overlapX = Math.min(sr.right, cr.right) - Math.max(sr.left, cr.left);
+  if (overlapX <= 1) return 0;
+  const overlapY = sr.bottom - cr.top;
+  if (overlapY <= 1) return 0;
+  return (overlapY * (h / vr.height)) + h * 0.02;
+}
+
+function portraitHandH(w, h) {
+  const mid = $("armMid");
+  const canvas = $("handCanvas");
+  if (!mid || !canvas) return h * 0.28;
+  const mr = mid.getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  if (cr.height < 2) return h * 0.28;
+  const armBottomPx = (mr.bottom - cr.top) * (h / cr.height);
+  const room = Math.max(0, h - chromeInsetPx(h) - armBottomPx);
+  return Math.min(h * 0.30, Math.max(h * 0.12, room * 0.52));
+}
+*/  /* 竖屏适配暂停 结束 */
+
+/** 固定车道：push 0 护手位（沿用旧车道），push 1 掌心落到本侧靶区。 */
 function laneHand(side, push, w, h) {
   const p = Math.min(1, Math.max(0, push));
-  const landscape = window.matchMedia(LANDSCAPE_MQ).matches;
+  // 竖屏适配暂停：只做横屏车道，非横屏也按横屏布局兜底
   const pole = w * stagePoleFrac;
+  const img = skinImg[side];
+  const aspect = img && img.naturalWidth ? img.naturalWidth / img.naturalHeight
+    : (side === "Left" ? 354 / 768 : 350 / 768);
+  const anchor = HAND_ANCHOR[side] || HAND_ANCHOR.Left;
   const tilt = side === "Left" ? 0.18 : -0.18;
   const scale = 1 - 0.15 * p;
-  const frac = landscape ? HAND_H_LAND : HAND_H_PORT;
-  const dh = h * frac * scale;
-  const lift = h * 0.1 * p;
-  const pad = Math.max(4, h * 0.012);
-  const y = h - pad - dh * 0.22 - lift;
-  const img = skinImg[side];
-  const aspect = img && img.naturalWidth ? img.naturalWidth / img.naturalHeight : (side === "Left" ? 157 / 512 : 191 / 512);
+  const dh = h * HAND_H_LAND * scale; // 竖屏适配暂停：原来按竖屏取 portraitHandH
   const dw = dh * aspect;
-  const u = skinAnchorU[side] || 0.5;
-  let x;
-  if (!landscape) {
-    const gap = w * (0.22 + (0.09 - 0.22) * p);
-    x = side === "Left" ? pole - gap : pole + gap;
-  } else {
-    const ext = handExtents(dw, dh, u, tilt);
+
+  // 护手位：横屏靠边；以贴图底边对齐舞台下沿
+  const pad = Math.max(4, h * 0.012);
+  const guardY = h - pad - (1 - anchor.palmY) * dh; // 竖屏适配暂停：原减 chromeInsetPx(h)
+  let guardX;
+  // 竖屏适配暂停：原来的竖屏分支（手放在杆两侧）已注释，恢复时取消注释并从下面 `{` 起改回 if/else
+  // if (!landscape) {
+  //   const gap = w * 0.22;
+  //   guardX = side === "Left" ? pole - gap : pole + gap;
+  // } else {
+  {
+    const ext = handExtents(dw, dh, anchor.palmX, anchor.palmY, tilt);
     const stage = document.querySelector(".stage");
     const cssW = stage ? stage.getBoundingClientRect().width : w;
     const dpr = cssW > 1 ? w / cssW : 1;
     const gap = Math.max(24 * dpr, w * 0.02);
     const reach = w * stageReachFrac + gap;
-    const inward = gap * 0.85 * p;
-    if (side === "Left") {
-      x = pole - reach - ext.maxX + inward;
-      const minX = gap - ext.minX;
-      if (x < minX) x = minX;
-    } else {
-      x = pole + reach - ext.minX - inward;
-      const maxX = w - gap - ext.maxX;
-      if (x > maxX) x = maxX;
-    }
+    guardX = side === "Left"
+      ? pole - reach - ext.maxX
+      : pole + reach - ext.minX;
   }
-  return { x, y, tilt, side, scale, frac };
+
+  // 接触位：掌心锚点压在靶区 .hit-pt 上，前臂从本侧画面下缘指向它
+  const armId = side === "Left" ? "armRU" : "armMid";
+  const hit = p > 0.02 ? hitPointPx(armId, w, h) : null;
+  // 到 0.97 就当已接触：吸到靶点，避免渐近值留下半像素误差
+  const stretch = p > 0.97 ? 1 : p;
+
+  let x;
+  let y;
+  if (hit && stretch > 0) {
+    x = guardX + (hit.x - guardX) * stretch;
+    y = guardY + (hit.y - guardY) * stretch;
+  } else {
+    x = guardX;
+    y = guardY;
+  }
+
+  // 掌心锚点在贴图内是 (palmX, palmY)；画手时以锚点为中心旋转绘制
+  return { x, y, tilt, side, scale, dh, dw, anchor, reach: p };
 }
 
 function fitHandFrame(host) {
   if (!host) return 0;
-  if (window.matchMedia(LANDSCAPE_MQ).matches) {
-    if (host.style.height) host.style.height = "";
-    return host.clientHeight;
+  /* 竖屏适配暂停：原逻辑在竖屏下把画布压到靶臂下方条带
+   * 恢复时把下面 if 里的 return 去掉即可。
+  if (!window.matchMedia(LANDSCAPE_MQ).matches) {
+    const mid = $("armMid");
+    const ru = $("armRU");
+    if (mid && ru) {
+      const armBottom = Math.max(mid.getBoundingClientRect().bottom, ru.getBoundingClientRect().bottom);
+      const bottom = host.getBoundingClientRect().bottom;
+      const room = Math.max(0, bottom - armBottom - 10);
+      const stageH = host.parentElement ? host.parentElement.clientHeight : window.innerHeight;
+      const px = Math.round(Math.min(stageH, room));
+      const next = px + "px";
+      if (host.style.height !== next) host.style.height = next;
+      return px;
+    }
   }
-  const mid = $("armMid");
-  const ru = $("armRU");
-  if (!mid || !ru) return 0;
-  const armBottom = Math.max(mid.getBoundingClientRect().bottom, ru.getBoundingClientRect().bottom);
-  const bottom = host.getBoundingClientRect().bottom;
-  const room = Math.max(0, bottom - armBottom - 10);
-  const stageH = host.parentElement ? host.parentElement.clientHeight : window.innerHeight;
-  const len = Math.min(stageH, room);
-  const px = Math.round(len);
-  const next = px + "px";
-  if (host.style.height !== next) host.style.height = next;
-  return px;
+  */
+  // 画布就是整块舞台（横屏定稿版）
+  if (host.style.height) host.style.height = "";
+  return host.clientHeight;
 }
 
+function shortestAngle(delta) {
+  let d = delta;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+/** 画手：掌心锚点落在 at.x/at.y；at.reach>0 时前臂沿轴向拉到画面下缘以外 */
 function drawSkinHand(ctx, img, at, h, alpha) {
   if (!img || !img.complete || !img.naturalWidth) return false;
-  const scale = at.scale == null ? 1 : at.scale;
-  const frac = at.frac == null ? HAND_H_LAND : at.frac;
-  const dh = h * frac * scale;
-  const dw = dh * (img.naturalWidth / img.naturalHeight);
+  const anchor = at.anchor || HAND_ANCHOR[at.side] || HAND_ANCHOR.Left;
+  const dh = at.dh;
+  const dw = at.dw;
+  const p = Math.min(1, Math.max(0, at.reach || 0));
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const cw = ctx.canvas.width;
+  const ch = ctx.canvas.height;
+
+  const yw = (anchor.wristY - anchor.palmY) * dh; // 掌锚点 → 腕线（本地 y）
+  const tilt = at.tilt || 0;
+
+  // 前臂轴向：护手位沿用旧的斜角，接触时指向本侧画面下缘外
+  const exitX = at.side === "Left" ? cw * 0.26 : cw * 0.74;
+  const exitY = ch + dh * 0.15;
+  const axisAngle = Math.atan2(exitY - at.y, exitX - at.x) - Math.PI / 2;
+  const phi = tilt + shortestAngle(axisAngle - tilt) * p;
+
+  // 前臂长度：至少伸到画面下缘；按需拉伸（以腕线为锚点，手掌不变形）
+  const rootLen = Math.max(1, (1 - anchor.palmY) * dh);
+  const needLen = Math.hypot(exitX - at.x, exitY - at.y);
+  const stretch = Math.min(2.8, Math.max(1, (needLen / rootLen - 1) * p + 1));
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // 1) 前臂段：从腕线往下，沿轴向拉伸到画面外
   ctx.save();
   ctx.translate(at.x, at.y);
-  ctx.rotate(at.tilt || 0);
-  ctx.globalAlpha = alpha;
-  const u = skinAnchorU[at.side] || 0.5;
-  ctx.drawImage(img, -dw * u, -dh * 0.78, dw, dh);
+  ctx.rotate(phi);
+  ctx.translate(0, yw);
+  ctx.scale(1, stretch);
+  ctx.translate(0, -yw);
+  ctx.beginPath();
+  ctx.rect(-dw * 1.4, yw - 1, dw * 2.8, dh * 2.4);
+  ctx.clip();
+  ctx.drawImage(img, -dw * anchor.palmX, -dh * anchor.palmY, dw, dh);
   ctx.restore();
+
+  // 2) 手掌段：不拉伸，压在腕线上
+  ctx.save();
+  ctx.translate(at.x, at.y);
+  ctx.rotate(phi);
+  ctx.beginPath();
+  ctx.rect(-dw * 1.4, -dh * 1.6, dw * 2.8, dh * 1.6 + yw + 1);
+  ctx.clip();
+  ctx.drawImage(img, -dw * anchor.palmX, -dh * anchor.palmY, dw, dh);
+  ctx.restore();
+
+  ctx.restore();
+  void iw;
+  void ih;
   return true;
+}
+
+/** 调试叠层：画两个靶区圆和掌心锚点十字（?debug=1 或按 D） */
+function drawDebug(ctx, w, h) {
+  // 落点数值始终写到 dataset，便于自动化核对（不开 debug 也写）
+  const ptRu = hitPointPx("armRU", w, h);
+  const ptMid = hitPointPx("armMid", w, h);
+  const atL = laneHand("Left", handViewState.pushOf("L"), w, h);
+  const atR = laneHand("Right", handViewState.pushOf("R"), w, h);
+  const fmt = (at) => at ? `${Math.round(at.x / w * 1000) / 10},${Math.round(at.y / h * 1000) / 10},${(at.reach || 0).toFixed(2)}` : "-";
+  const dotFmt = (pt) => pt ? `${Math.round(pt.x / w * 1000) / 10},${Math.round(pt.y / h * 1000) / 10}` : "-";
+  ctx.canvas.dataset.palmL = fmt(atL);
+  ctx.canvas.dataset.palmR = fmt(atR);
+  ctx.canvas.dataset.hitRU = dotFmt(ptRu);
+  ctx.canvas.dataset.hitMid = dotFmt(ptMid);
+  if (!debugMode) return;
+  ctx.save();
+  ctx.lineWidth = Math.max(1, w / 700);
+  const cross = (pt, color) => {
+    if (!pt) return;
+    const r = Math.max(6, w * 0.012);
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(pt.x - r, pt.y);
+    ctx.lineTo(pt.x + r, pt.y);
+    ctx.moveTo(pt.x, pt.y - r);
+    ctx.lineTo(pt.x, pt.y + r);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, r * 1.5, 0, Math.PI * 2);
+    ctx.stroke();
+  };
+  const circle = (el, color) => {
+    const dot = el && el.querySelector(".hit-pt");
+    const canvas = $("handCanvas");
+    if (!dot || !canvas) return;
+    const zr = el.getBoundingClientRect();
+    const cr = canvas.getBoundingClientRect();
+    if (cr.width < 2) return;
+    const sx = w / cr.width;
+    const sy = h / cr.height;
+    ctx.strokeStyle = color;
+    ctx.strokeRect(
+      (zr.left - cr.left) * sx, (zr.top - cr.top) * sy,
+      zr.width * sx, zr.height * sy
+    );
+  };
+  circle($("armRU"), "rgba(255,150,90,0.85)");
+  circle($("armMid"), "rgba(120,220,255,0.85)");
+  cross(ptRu, "rgba(255,150,90,1)");
+  cross(ptMid, "rgba(120,220,255,1)");
+  // 掌心锚点（当前 push 落在哪里），用来核对落点
+  if (atL) cross({ x: atL.x, y: atL.y }, "rgba(120,255,140,1)");
+  if (atR) cross({ x: atR.x, y: atR.y }, "rgba(255,120,255,1)");
+  ctx.restore();
 }
 
 function createHandViewState() {
@@ -1388,18 +1673,28 @@ function createHandViewState() {
     onHoldProgress(p) {
       hold01 = p > 0 ? Math.min(1, p) : 0;
     },
+    /** 本侧当前前推量（0 护手 → 1 接触） */
+    pushOf(side) {
+      if (side === "L") return pushL;
+      if (side === "R") return pushR;
+      return 0;
+    },
     paint(ctx, w, h) {
       const now = performance.now();
-      let t = 1;
+      // 第一帧（reset 后）不跳变：护手位起步，之后按时间常数靠近目标
+      let tAttack = 0;
+      let tRelease = 0;
       if (lastSmoothAt) {
         const dt = now - lastSmoothAt;
-        t = dt > 200 ? 1 : (dt <= 0 ? 0 : 1 - Math.exp(-dt / PUSH_SMOOTH_MS));
+        const clamp = (ms) => (dt > 200 ? 1 : (dt <= 0 ? 0 : 1 - Math.exp(-dt / ms)));
+        tAttack = clamp(PUSH_ATTACK_MS);
+        tRelease = clamp(PUSH_SMOOTH_MS);
       }
       lastSmoothAt = now;
       const wantL = desiredPush("L", now);
       const wantR = desiredPush("R", now);
-      pushL += (wantL - pushL) * t;
-      pushR += (wantR - pushR) * t;
+      pushL += (wantL - pushL) * (wantL > pushL ? tAttack : tRelease);
+      pushR += (wantR - pushR) * (wantR > pushR ? tAttack : tRelease);
       if (Math.abs(pushL) < 0.002) pushL = 0;
       if (Math.abs(pushR) < 0.002) pushR = 0;
       const alpha = 0.94 + hold01 * 0.06;
@@ -1438,6 +1733,8 @@ function createHandViewState() {
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, w, hgt);
       if (visible) this.paint(ctx, w, hgt);
+      drawDebug(ctx, w, hgt);
+      flushPendingImpact(performance.now());
     },
   };
 }
@@ -1515,26 +1812,94 @@ async function initHand(vision, preferredDelegate) {
   }
 }
 
-function flash(ok) {
-  const cur = required();
+function impactPoint(move) {
+  const el = move && $(move.armId);
+  const dot = el && el.querySelector(".hit-pt");
+  const stage = document.querySelector(".stage");
+  if (!dot || !stage) return null;
+  const dr = dot.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  if (sr.width < 2 || sr.height < 2) return null;
+  return {
+    x: (dr.left + dr.width / 2 - sr.left) / sr.width,
+    y: (dr.top + dr.height / 2 - sr.top) / sr.height,
+  };
+}
+
+/** 视觉反馈：靶臂闪光 + 冲击光圈 + 音字 + 轻抖。只做画面，不动判定。 */
+function flash(ok, move) {
+  const cur = move || required();
   $("flash").className = "flash " + (ok ? "ok" : "bad");
-  if (ok) {
-    $(cur.armId).classList.add("hit");
-    $("demoCard").classList.add("ok-flash");
-    $("sil").classList.add("strike");
-  }
   const s = $("sfx");
   s.textContent = ok ? cur.ok : cur.bad;
   s.classList.remove("show");
   void s.offsetWidth;
   s.classList.add("show");
+
+  const pt = impactPoint(cur);
+  if (pt) {
+    s.style.setProperty("--sfx-x", `${pt.x * 100}%`);
+    s.style.setProperty("--sfx-y", `${pt.y * 100}%`);
+  }
+
+  if (ok) {
+    const arm = $(cur.armId);
+    if (arm) arm.classList.add("hit");
+    $("demoCard").classList.add("ok-flash");
+    $("sil").classList.add("strike");
+    const ring = $("impact");
+    if (ring && pt) {
+      ring.style.left = `${pt.x * 100}%`;
+      ring.style.top = `${pt.y * 100}%`;
+      ring.classList.remove("fire");
+      ring.classList.toggle("cool", cur.sil === "bong");
+      void ring.offsetWidth;
+      ring.classList.add("fire");
+    }
+    const stage = document.querySelector(".stage");
+    if (stage) {
+      stage.classList.remove("shake");
+      void stage.offsetWidth;
+      stage.classList.add("shake");
+    }
+  }
+
   setTimeout(() => {
     $("flash").className = "flash";
     $("armRU").classList.remove("hit");
     $("armMid").classList.remove("hit");
     $("sil").classList.remove("strike");
     $("demoCard").classList.remove("ok-flash");
-  }, ok ? 200 : (cur.sil === "bong" ? 140 : 90));
+    const stage = document.querySelector(".stage");
+    if (stage) stage.classList.remove("shake");
+  }, ok ? 220 : (cur.sil === "bong" ? 140 : 90));
+}
+
+// 待触发的视觉反馈：判定即时，画面等手到达靶区
+const CONTACT_PUSH = 0.97; // 与 laneHand 的吸附阈值一致：触发瞬间掌心正好压在靶点
+const CONTACT_FALLBACK_MS = 260;
+let pendingImpact = null;
+
+function armPushOf(move) {
+  return handViewState.pushOf(move && move.side);
+}
+
+function armReached(move) {
+  if (!move) return true;
+  const host = $("handOverlay");
+  // need_both 阶段不画手，没人会到达：直接走兜底
+  if (host && host.dataset.hands === "need_both") return false;
+  return armPushOf(move) >= CONTACT_PUSH;
+}
+
+function flushPendingImpact(now) {
+  if (!pendingImpact) return;
+  const reached = armReached(pendingImpact.move);
+  if (reached || now - pendingImpact.t0 >= CONTACT_FALLBACK_MS) {
+    const { move, kind } = pendingImpact;
+    pendingImpact = null;
+    flash(kind === "ok", move);
+  }
 }
 
 function onHitValid() {
@@ -1545,7 +1910,9 @@ function onHitValid() {
   holdCount = 0;
   holdAccum = 0;
   holdLastTs = 0;
-  flash(true);
+  // 判定和推进即时执行；画面反馈挂起，等这只手落到靶区
+  const hitMove = required();
+  pendingImpact = { move: hitMove, kind: "ok", t0: now };
   handViewState.onHitOk();
   step += 1;
   setCountDetail("识别：ok");
@@ -1554,6 +1921,7 @@ function onHitValid() {
     return;
   }
   applyStepVisual();
+  if (armReached(hitMove)) flushPendingImpact(now);
   showBanner("冷却中 · 2 秒后可下一击", 1200);
 }
 
@@ -1561,7 +1929,8 @@ function onHitWrong(msg) {
   const now = performance.now();
   if (now - lastWrongAt < WRONG_COOLDOWN) return;
   lastWrongAt = now;
-  flash(false);
+  pendingImpact = null; // 错击即时灰闪，不等接触
+  flash(false, required());
   showBanner(msg || ("须出" + required().name), 800);
 }
 
