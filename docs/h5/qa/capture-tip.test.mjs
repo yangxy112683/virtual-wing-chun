@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   captureTipAudience,
   composeCaptureTip,
+  formatCountLine,
   releaseDebugCaptureTip,
   showCaptureTipText,
 } from "../capture-tip.mjs";
@@ -82,6 +83,21 @@ test("双手入镜门每次都显示请双手入镜，调试信息只追加不�
     releaseDebugCaptureTip("请双手入镜 · 检出 1/2 只手 · unknown 弱特征"),
     "请双手入镜",
   );
+});
+
+test("计数行平时只留几比十，识别读数只在调试模式接上", () => {
+  assert.equal(formatCountLine(0, "识别：—", false), "0 / 10");
+  assert.equal(formatCountLine(0, "识别：—", true), "0 / 10 · 识别：—");
+  assert.equal(formatCountLine(1, "识别：unknown/near", false), "1 / 10");
+  assert.equal(formatCountLine(1, "识别：unknown/near", true), "1 / 10 · 识别：unknown/near");
+  assert.equal(formatCountLine(1, "识别：straight/ok", false), "1 / 10");
+  assert.equal(formatCountLine(4, "识别：ok", false), "4 / 10");
+  assert.equal(formatCountLine(4, "识别：ok", true), "4 / 10 · 识别：ok");
+  assert.equal(formatCountLine(2, "冲态维持中 40%", false), "2 / 10 · 冲态维持中 40%");
+  assert.equal(formatCountLine(2, "膀态维持中 13%", true), "2 / 10 · 膀态维持中 13%");
+  assert.equal(releaseDebugCaptureTip("1 / 10 · 识别：unknown/near"), "1 / 10");
+  assert.equal(captureTipAudience("识别中…"), "player");
+  assert.equal(captureTipAudience("识别待命"), "player");
 });
 
 test("关掉调试后剥掉调试后缀，维持进度里的百分号留下", () => {
